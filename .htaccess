@@ -1,0 +1,8 @@
+# Bloqueia listagem de diretório e reforça HTTPS (descomente se o painel estiver sempre em SSL)
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # RewriteCond %{HTTPS} !=on
+  # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+Options -Indexes

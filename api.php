@@ -1,0 +1,447 @@
+<?php
+
+declare(strict_types=1);
+
+require __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/crypto.php';
+require_once __DIR__ . '/includes/discover.php';
+require_once __DIR__ . '/includes/users.php';
+
+header('Content-Type: application/json; charset=utf-8');
+
+if (!extractor_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'nao_autenticado']);
+    exit;
+}
+
+$raw = file_get_contents('php://input') ?: '';
+$input = json_decode($raw, true);
+if (!is_array($input)) {
+    $input = [];
+}
+
+$csrf = (string) ($input['csrf'] ?? '');
+if (!hash_equals($_SESSION['csrf'] ?? '', $csrf)) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'csrf']);
+    exit;
+}
+
+$action = (string) ($input['action'] ?? '');
+
+try {
+    $pdo = extractor_pdo();
+    extractor_user_refresh_session($pdo);
+    $uid = extractor_user_id();
+    $super = extractor_is_super_master();
+    $cfg = extractor_config();
+
+    $outDir = EXTRACTOR_DATA . '/out';
+    if (!is_dir($outDir)) {
+        mkdir($outDir, 0700, true);
+    }
+
+    if ($action === 'sites_list') {
+        if ($super) {
+            $rows = $pdo->query('SELECT id, user_id, name, base_url, content_url, username, same_origin_only, created_at FROM sites ORDER BY name COLLATE NOCASE')->fetchAll();
+        } else {
+            $st = $pdo->prepare('SELECT id, user_id, name, base_url, content_url, username, same_origin_only, created_at FROM sites WHERE user_id = ? ORDER BY name COLLATE NOCASE');
+            $st->execute([$uid]);
+            $rows = $st->fetchAll();
+        }
+        echo json_encode(['ok' => true, 'sites' => $rows, 'credits' => (int) ($_SESSION['user_credits'] ?? 0), 'role' => (string) ($_SESSION['user_role'] ?? '')]);
+        exit;
+    }
+
+    if ($action === 'site_delete') {
+        $id = (int) ($input['id'] ?? 0);
+        if ($id < 1) {
+            throw new RuntimeException('id inválido');
+        }
+        if ($super) {
+            $pdo->prepare('DELETE FROM sites WHERE id = ?')->execute([$id]);
+        } else {
+            $pdo->prepare('DELETE FROM sites WHERE id = ? AND user_id = ?')->execute([$id, $uid]);
+        }
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    if ($action === 'site_save') {
+        $id = isset($input['id']) ? (int) $input['id'] : 0;
+        $name = trim((string) ($input['name'] ?? ''));
+        $base = trim((string) ($input['base_url'] ?? ''));
+        $content = trim((string) ($input['content_url'] ?? ''));
+        $user = trim((string) ($input['username'] ?? ''));
+        $pass = (string) ($input['password'] ?? '');
+        $cookie = trim((string) ($input['cookie'] ?? ''));
+        $same = !empty($input['same_origin_only']);
+        if ($name === '' || $base === '') {
+            throw new RuntimeException('Nome e URL base são obrigatórios');
+        }
+        if (!filter_var($base, FILTER_VALIDATE_URL)) {
+            throw new RuntimeException('URL base inválida');
+        }
+        if ($content !== '' && !filter_var($content, FILTER_VALIDATE_URL)) {
+            throw new RuntimeException('URL de conteúdo inválida');
+        }
+        if ($pass === '' && $cookie === '') {
+            throw new RuntimeException('Informe senha do site e/ou cookie de sessão');
+        }
+        $pwEnc = extractor_encrypt($pass);
+        $ckEnc = $cookie !== '' ? extractor_encrypt($cookie) : null;
+        $now = time();
+        if ($id > 0) {
+            $st = $pdo->prepare('SELECT * FROM sites WHERE id = ?');
+            $st->execute([$id]);
+            $row = $st->fetch();
+            if (!$row) {
+                throw new RuntimeException('Site não encontrado');
+            }
+            if (!$super && (int) ($row['user_id'] ?? 0) !== $uid) {
+                throw new RuntimeException('Sem permissão');
+            }
+            if ($pass === '') {
+                $pwEnc = (string) $row['password_enc'];
+            }
+            if ($cookie === '') {
+                $ckEnc = $row['cookie_enc'] !== null && $row['cookie_enc'] !== '' ? (string) $row['cookie_enc'] : null;
+            }
+            $pdo->prepare(
+                'UPDATE sites SET name=?, base_url=?, content_url=?, username=?, password_enc=?, cookie_enc=?, same_origin_only=? WHERE id=?'
+            )->execute([
+                $name,
+                $base,
+                $content !== '' ? $content : null,
+                $user !== '' ? $user : null,
+                $pwEnc,
+                $ckEnc,
+                $same ? 1 : 0,
+                $id,
+            ]);
+            echo json_encode(['ok' => true, 'id' => $id]);
+        } else {
+            $pdo->prepare(
+                'INSERT INTO sites (user_id, name, base_url, content_url, username, password_enc, cookie_enc, same_origin_only, created_at) VALUES (?,?,?,?,?,?,?,?,?)'
+            )->execute([
+                $uid,
+                $name,
+                $base,
+                $content !== '' ? $content : null,
+                $user !== '' ? $user : null,
+                $pwEnc,
+                $ckEnc,
+                $same ? 1 : 0,
+                $now,
+            ]);
+            $nid = (int) $pdo->lastInsertId();
+            echo json_encode(['ok' => true, 'id' => $nid]);
+        }
+        exit;
+    }
+
+    if ($action === 'discover') {
+        $siteId = (int) ($input['site_id'] ?? 0);
+        $page = trim((string) ($input['page_url'] ?? ''));
+        $cookie = trim((string) ($input['cookie'] ?? ''));
+        $same = !empty($input['same_origin_only']);
+        if ($siteId > 0) {
+            $st = $pdo->prepare('SELECT * FROM sites WHERE id = ?');
+            $st->execute([$siteId]);
+            $s = $st->fetch();
+            if (!$s) {
+                throw new RuntimeException('Site não encontrado');
+            }
+            if (!$super && (int) ($s['user_id'] ?? 0) !== $uid) {
+                throw new RuntimeException('Sem permissão');
+            }
+            $page = (string) ($s['content_url'] ?? '') !== '' ? (string) $s['content_url'] : (string) $s['base_url'];
+            $cookie = '';
+            if (!empty($s['cookie_enc'])) {
+                $cookie = extractor_decrypt((string) $s['cookie_enc']);
+            }
+            $same = (int) ($s['same_origin_only'] ?? 1) === 1;
+        }
+        if ($page === '' || !filter_var($page, FILTER_VALIDATE_URL)) {
+            throw new RuntimeException('URL da página inválida');
+        }
+
+        $cost = (int) $cfg['credits_per_discover'];
+        if ($cost > 0 && !extractor_credit_try_debit($pdo, $uid, $cost, 'Descoberta de links')) {
+            throw new RuntimeException('Créditos insuficientes para descoberta.');
+        }
+
+        $urls = extractor_discover_links($page, $cookie, $same);
+        echo json_encode(['ok' => true, 'urls' => $urls, 'page' => $page, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'download_one') {
+        $url = trim((string) ($input['url'] ?? ''));
+        $siteId = (int) ($input['site_id'] ?? 0);
+        $fname = trim((string) ($input['filename'] ?? ''));
+        if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new RuntimeException('URL inválida');
+        }
+        $headers = [];
+        $cookie = trim((string) ($input['cookie'] ?? ''));
+        if ($siteId > 0) {
+            $st = $pdo->prepare('SELECT cookie_enc, user_id FROM sites WHERE id = ?');
+            $st->execute([$siteId]);
+            $row = $st->fetch();
+            if (!$row) {
+                throw new RuntimeException('Site não encontrado');
+            }
+            if (!$super && (int) ($row['user_id'] ?? 0) !== $uid) {
+                throw new RuntimeException('Sem permissão');
+            }
+            if (!empty($row['cookie_enc'])) {
+                $cookie = extractor_decrypt((string) $row['cookie_enc']);
+            }
+        }
+        if ($cookie !== '') {
+            if (preg_match('/^\s*Cookie\s*:/i', $cookie)) {
+                $headers[] = trim($cookie);
+            } else {
+                $headers[] = 'Cookie: ' . $cookie;
+            }
+        }
+        $baseName = $fname !== '' ? extractor_safe_filename($fname) : extractor_safe_filename(basename(parse_url($url, PHP_URL_PATH) ?: 'download.bin'));
+        $dest = $outDir . '/' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '_' . $baseName;
+        $r = extractor_stream_url_to_file($url, $dest, $headers);
+        if (!$r['ok']) {
+            throw new RuntimeException($r['error']);
+        }
+
+        $cost = (int) $cfg['credits_per_download'];
+        if ($cost > 0 && !extractor_credit_try_debit($pdo, $uid, $cost, 'Download de ficheiro')) {
+            @unlink($dest);
+            throw new RuntimeException('Créditos insuficientes para concluir o registo do ficheiro.');
+        }
+
+        $pdo->prepare('INSERT INTO files (user_id, site_id, source_url, local_path, bytes, created_at) VALUES (?,?,?,?,?,?)')->execute([
+            $uid,
+            $siteId > 0 ? $siteId : null,
+            $url,
+            $dest,
+            $r['bytes'],
+            time(),
+        ]);
+        $fid = (int) $pdo->lastInsertId();
+        echo json_encode(['ok' => true, 'file_id' => $fid, 'bytes' => $r['bytes'], 'name' => basename($dest), 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'files_list') {
+        $lim = min(500, max(1, (int) ($input['limit'] ?? 200)));
+        if ($super) {
+            $st = $pdo->query('SELECT id, user_id, site_id, source_url, local_path, bytes, created_at FROM files ORDER BY id DESC LIMIT ' . $lim);
+            $rows = $st->fetchAll();
+        } else {
+            $st = $pdo->prepare('SELECT id, user_id, site_id, source_url, local_path, bytes, created_at FROM files WHERE user_id = ? ORDER BY id DESC LIMIT ' . $lim);
+            $st->execute([$uid]);
+            $rows = $st->fetchAll();
+        }
+        echo json_encode(['ok' => true, 'files' => $rows, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'account_password_change') {
+        $cur = (string) ($input['current_password'] ?? '');
+        $p1 = (string) ($input['new_password'] ?? '');
+        $p2 = (string) ($input['new_password_confirm'] ?? '');
+        if ($cur === '' || strlen($p1) < 10) {
+            throw new RuntimeException('Informe a senha actual e a nova senha (mínimo 10 caracteres).');
+        }
+        if ($p1 !== $p2) {
+            throw new RuntimeException('A confirmação da nova senha não coincide.');
+        }
+        $st = $pdo->prepare('SELECT id, password_hash FROM users WHERE id = ? AND status = ?');
+        $st->execute([$uid, 'active']);
+        $u = $st->fetch();
+        if (!$u || !password_verify($cur, (string) $u['password_hash'])) {
+            throw new RuntimeException('Senha actual incorrecta.');
+        }
+        $hash = password_hash($p1, PASSWORD_DEFAULT);
+        if ($hash === false) {
+            throw new RuntimeException('Erro ao gerar hash de senha.');
+        }
+        $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([$hash, $uid]);
+        echo json_encode(['ok' => true, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'account_email_change') {
+        $cur = (string) ($input['current_password'] ?? '');
+        $newEmail = strtolower(trim((string) ($input['new_email'] ?? '')));
+        if ($cur === '' || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+            throw new RuntimeException('Informe a senha actual e um e-mail válido.');
+        }
+        $st = $pdo->prepare('SELECT id, password_hash FROM users WHERE id = ? AND status = ?');
+        $st->execute([$uid, 'active']);
+        $u = $st->fetch();
+        if (!$u || !password_verify($cur, (string) $u['password_hash'])) {
+            throw new RuntimeException('Senha actual incorrecta.');
+        }
+        try {
+            $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$newEmail, $uid]);
+        } catch (PDOException $e) {
+            if (str_contains($e->getMessage(), 'UNIQUE')) {
+                throw new RuntimeException('Este e-mail já está em uso.');
+            }
+            throw new RuntimeException('Não foi possível actualizar o e-mail.');
+        }
+        $_SESSION['user_email'] = $newEmail;
+        echo json_encode(['ok' => true, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'plans_buyable') {
+        $rows = extractor_plans_list($pdo);
+        echo json_encode(['ok' => true, 'plans' => $rows, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'pix_create') {
+        require_once __DIR__ . '/includes/billing.php';
+        $planCode = trim((string) ($input['plan_code'] ?? ''));
+        if ($planCode === '' || $planCode === 'super_master') {
+            throw new RuntimeException('Plano inválido.');
+        }
+        $pst = $pdo->prepare('SELECT code, price_monthly, monthly_credits FROM plans WHERE code = ?');
+        $pst->execute([$planCode]);
+        $plan = $pst->fetch();
+        if (!$plan) {
+            throw new RuntimeException('Plano não encontrado.');
+        }
+        $amount = (float) $plan['price_monthly'];
+        if ($amount <= 0) {
+            throw new RuntimeException('Este plano não tem preço configurado para cobrança PIX.');
+        }
+        $now = time();
+        $pdo->prepare(
+            'INSERT INTO payments (user_id, plan_code, amount, currency, status, provider, created_at) VALUES (?,?,?,?,?,?,?)'
+        )->execute([$uid, $planCode, $amount, 'BRL', 'pending', 'asaas', $now]);
+        $lid = (int) $pdo->lastInsertId();
+        $pix = '';
+        $demo = true;
+        if (trim((string) ($cfg['asaas_api_key'] ?? '')) !== '') {
+            $r = extractor_asaas_create_pix_for_payment($pdo, $cfg, $lid);
+            $pix = $r['pix_copy_paste'];
+            $demo = $pix === '';
+        }
+        echo json_encode([
+            'ok' => true,
+            'payment_id' => $lid,
+            'amount' => $amount,
+            'plan_code' => $planCode,
+            'pix_copy_paste' => $pix,
+            'demo_mode' => $demo,
+            'credits' => (int) ($_SESSION['user_credits'] ?? 0),
+        ]);
+        exit;
+    }
+
+    if ($action === 'pix_status') {
+        require_once __DIR__ . '/includes/billing.php';
+        $pid = (int) ($input['payment_id'] ?? 0);
+        if ($pid < 1) {
+            throw new RuntimeException('ID inválido.');
+        }
+        $st = $pdo->prepare('SELECT * FROM payments WHERE id = ? AND user_id = ?');
+        $st->execute([$pid, $uid]);
+        $pay = $st->fetch();
+        if (!$pay) {
+            throw new RuntimeException('Pagamento não encontrado.');
+        }
+        if (($pay['status'] ?? '') === 'pending' && trim((string) ($cfg['asaas_api_key'] ?? '')) !== '') {
+            extractor_fulfil_payment_if_paid($pdo, $cfg, $pid);
+            $st->execute([$pid, $uid]);
+            $pay = $st->fetch();
+        }
+        echo json_encode([
+            'ok' => true,
+            'payment' => $pay,
+            'credits' => (int) ($_SESSION['user_credits'] ?? 0),
+        ]);
+        exit;
+    }
+
+    if ($action === 'ticket_create') {
+        $subject = trim((string) ($input['subject'] ?? ''));
+        $body = trim((string) ($input['body'] ?? ''));
+        $priority = trim((string) ($input['priority'] ?? 'normal'));
+        if (!in_array($priority, ['low', 'normal', 'high', 'urgent'], true)) {
+            $priority = 'normal';
+        }
+        if ($subject === '' || strlen($subject) > 200) {
+            throw new RuntimeException('Assunto inválido (máx. 200 caracteres).');
+        }
+        if ($body === '' || strlen($body) > 8000) {
+            throw new RuntimeException('Mensagem inválida (máx. 8000 caracteres).');
+        }
+        $now = time();
+        $pdo->prepare(
+            'INSERT INTO support_tickets (user_id, subject, body, priority, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
+        )->execute([$uid, $subject, $body, $priority, 'open', $now, $now]);
+        $tid = (int) $pdo->lastInsertId();
+        echo json_encode(['ok' => true, 'ticket_id' => $tid]);
+        exit;
+    }
+
+    if ($action === 'ticket_list') {
+        $st = $pdo->prepare('SELECT * FROM support_tickets WHERE user_id = ? ORDER BY id DESC LIMIT 100');
+        $st->execute([$uid]);
+        echo json_encode(['ok' => true, 'tickets' => $st->fetchAll()]);
+        exit;
+    }
+
+    if ($action === 'ticket_get') {
+        $tid = (int) ($input['id'] ?? 0);
+        if ($tid < 1) {
+            throw new RuntimeException('ID inválido.');
+        }
+        $st = $pdo->prepare('SELECT * FROM support_tickets WHERE id = ? AND user_id = ?');
+        $st->execute([$tid, $uid]);
+        $t = $st->fetch();
+        if (!$t) {
+            throw new RuntimeException('Ticket não encontrado.');
+        }
+        $ms = $pdo->prepare('SELECT * FROM support_ticket_messages WHERE ticket_id = ? ORDER BY id ASC');
+        $ms->execute([$tid]);
+        echo json_encode(['ok' => true, 'ticket' => $t, 'messages' => $ms->fetchAll()]);
+        exit;
+    }
+
+    if ($action === 'ticket_reply') {
+        $tid = (int) ($input['id'] ?? 0);
+        $body = trim((string) ($input['body'] ?? ''));
+        if ($tid < 1 || $body === '' || strlen($body) > 8000) {
+            throw new RuntimeException('Dados inválidos.');
+        }
+        $st = $pdo->prepare('SELECT * FROM support_tickets WHERE id = ? AND user_id = ?');
+        $st->execute([$tid, $uid]);
+        $t = $st->fetch();
+        if (!$t) {
+            throw new RuntimeException('Ticket não encontrado.');
+        }
+        if (($t['status'] ?? '') === 'closed') {
+            throw new RuntimeException('Ticket fechado.');
+        }
+        $now = time();
+        $pdo->prepare(
+            'INSERT INTO support_ticket_messages (ticket_id, author_user_id, body, created_at) VALUES (?,?,?,?)'
+        )->execute([$tid, $uid, $body, $now]);
+        $pdo->prepare('UPDATE support_tickets SET status = ?, updated_at = ? WHERE id = ?')->execute(['in_progress', $now, $tid]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'acao_desconhecida']);
+} catch (Throwable $e) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+}

@@ -1,0 +1,6 @@
+# Consistência em repositórios Windows/Linux
+*.php text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+.htaccess text eol=lf

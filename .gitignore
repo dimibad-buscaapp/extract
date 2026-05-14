@@ -1,0 +1,25 @@
+# Segredos e config local
+config.local.php
+
+# Base SQLite e WAL
+/data/*.sqlite
+/data/*.sqlite-journal
+/data/*.sqlite-wal
+/data/*.sqlite-shm
+
+# Ficheiros gerados na raiz de /data (M3U, downloads, etc.)
+/data/*.m3u
+/data/*.json
+/data/*.txt
+/data/*.bin
+
+# Saída de downloads (mantém .htaccess no repositório)
+/data/out/*
+!/data/out/.htaccess
+
+# SO / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
