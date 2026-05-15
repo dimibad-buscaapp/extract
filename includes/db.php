@@ -90,6 +90,19 @@ function extractor_pdo(): PDO
     );
 
     $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS m3u_playlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            source_url TEXT,
+            bytes INTEGER NOT NULL DEFAULT 0,
+            entry_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        )'
+    );
+
+    $pdo->exec(
         'CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,

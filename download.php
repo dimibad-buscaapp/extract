@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/users.php';
+require_once __DIR__ . '/includes/m3u.php';
 
 if (!extractor_logged_in()) {
     http_response_code(403);
@@ -16,6 +17,16 @@ if (!extractor_logged_in()) {
  */
 function extractor_download_resolve_path(PDO $pdo, int $uid, bool $super): ?array
 {
+    if (isset($_GET['m3u_id']) && (string) $_GET['m3u_id'] !== '') {
+        $m3uId = (int) $_GET['m3u_id'];
+        $resolved = extractor_m3u_resolve_path($pdo, $m3uId, $uid, $super);
+        if ($resolved === null) {
+            return null;
+        }
+
+        return $resolved;
+    }
+
     if (isset($_GET['id']) && (string) $_GET['id'] !== '') {
         $id = (int) $_GET['id'];
         if ($id < 1) {

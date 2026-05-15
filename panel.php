@@ -29,8 +29,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $form = (string) ($_POST['form'] ?? '');
     if ($form === 'm3u' || $form === 'xtream' || $form === 'download') {
         require_once __DIR__ . '/includes/db.php';
+        require_once __DIR__ . '/includes/users.php';
+        require_once __DIR__ . '/includes/m3u.php';
     }
     if ($form === 'm3u') {
+        $pdo = extractor_pdo();
+        $m3uUid = extractor_user_id();
         $url = trim((string) ($_POST['m3u_url'] ?? ''));
         $text = (string) ($_POST['m3u_text'] ?? '');
         if ($url !== '') {
@@ -45,7 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 @unlink($fn);
                 $_SESSION['flash'] = ['type' => 'err', 'msg' => 'Resposta não parece um M3U válido (#EXTM3U).'];
             } else {
-                $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U salvo em /data (' . extractor_format_bytes((int) $r['bytes']) . ').'];
+                $pid = extractor_m3u_register_playlist($pdo, $m3uUid, $fn, 'Lista ' . date('d/m H:i'), $url);
+                $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U guardado (' . extractor_format_bytes((int) $r['bytes']) . '). Veja em «Listas guardadas» abaixo.'];
+                $_SESSION['m3u_highlight'] = $pid;
             }
         } elseif ($text !== '') {
             if (strlen($text) > 4 * 1024 * 1024) {
@@ -55,7 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $fn = EXTRACTOR_DATA . '/lista_' . date('Ymd_His') . '.m3u';
                 file_put_contents($fn, $text);
-                $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U salvo (' . extractor_format_bytes(strlen($text)) . ').'];
+                $pid = extractor_m3u_register_playlist($pdo, $m3uUid, $fn, 'Lista ' . date('d/m H:i'), null);
+                $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U guardado (' . extractor_format_bytes(strlen($text)) . '). Veja em «Listas guardadas».'];
+                $_SESSION['m3u_highlight'] = $pid;
             }
         } else {
             $_SESSION['flash'] = ['type' => 'err', 'msg' => 'Informe a URL do M3U ou cole o conteúdo.'];
@@ -64,6 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     if ($form === 'xtream') {
+        $pdo = extractor_pdo();
+        $m3uUid = extractor_user_id();
         $host = trim((string) ($_POST['xt_host'] ?? ''));
         $user = trim((string) ($_POST['xt_user'] ?? ''));
         $pass = trim((string) ($_POST['xt_pass'] ?? ''));
@@ -91,7 +101,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $detail = $m3u['error'] !== '' ? ' (' . $m3u['error'] . ')' : '';
                     $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U automática falhou' . $detail . '; JSON e URL guardados em /data.'];
                 } else {
-                    $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'Lista M3U Xtream salva (' . extractor_format_bytes((int) $m3u['bytes']) . ').'];
+                    $pid = extractor_m3u_register_playlist($pdo, $m3uUid, $m3uPath, 'Xtream ' . date('d/m H:i'), $m3uUrl);
+                    $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'Lista M3U Xtream guardada (' . extractor_format_bytes((int) $m3u['bytes']) . '). Veja em «Listas guardadas».'];
+                    $_SESSION['m3u_highlight'] = $pid;
                 }
             }
         }
@@ -125,6 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
+$m3uHighlight = (int) ($_SESSION['m3u_highlight'] ?? 0);
+unset($_SESSION['m3u_highlight']);
 $csrf = extractor_csrf_token();
 header('Content-Type: text/html; charset=utf-8');
 ?>
@@ -242,6 +256,15 @@ header('Content-Type: text/html; charset=utf-8');
           <textarea name="m3u_text"></textarea>
           <button class="primary" type="submit">Guardar</button>
         </form>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0;">Listas guardadas</h2>
+        <p class="muted" style="margin:0 0 0.5rem;">As listas M3U ficam aqui (não em Sites). Pode descarregar o ficheiro .m3u ou os URLs dos canais para a Biblioteca.</p>
+        <button type="button" class="secondary" id="btnRefreshM3u">Actualizar</button>
+        <table class="tbl" id="m3uTbl" style="margin-top:0.5rem;">
+          <thead><tr><th>Nome</th><th>Tamanho</th><th>Canais</th><th>Acções</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
       <div class="card">
         <h2 style="margin-top:0;">Xtream</h2>
@@ -369,8 +392,31 @@ header('Content-Type: text/html; charset=utf-8');
     </div>
   </dialog>
 
+  <dialog id="dlgM3u">
+    <div class="dlg-body">
+      <h2 id="m3uDlgTitle" style="margin-top:0;">Canais</h2>
+      <p class="muted" id="m3uDlgMeta" style="font-size:0.82rem;"></p>
+      <div style="max-height:14rem;overflow:auto;border:1px solid #2c3140;border-radius:6px;padding:0.35rem;">
+        <table class="tbl" id="m3uEntriesTbl" style="margin:0;">
+          <thead><tr><th></th><th>Nome</th><th>URL</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+        <button type="button" class="secondary" id="m3uPrev">Anterior</button>
+        <button type="button" class="secondary" id="m3uNext">Seguinte</button>
+        <button type="button" class="primary" id="m3uDlSelected">Baixar seleccionados</button>
+      </div>
+      <p class="muted" id="m3uDlgStatus" style="font-size:0.82rem;margin:0.5rem 0 0;"></p>
+      <div class="dlg-actions">
+        <button type="button" class="secondary" id="m3uDlgClose">Fechar</button>
+      </div>
+    </div>
+  </dialog>
+
   <script>
     const CSRF = <?= json_encode($csrf, JSON_THROW_ON_ERROR) ?>;
+    const M3U_HIGHLIGHT = <?= json_encode($m3uHighlight, JSON_THROW_ON_ERROR) ?>;
     const API_URL = <?= json_encode(extractor_url('api.php'), JSON_THROW_ON_ERROR) ?>;
     const DOWNLOAD_URL = <?= json_encode(extractor_url('download.php'), JSON_THROW_ON_ERROR) ?>;
     const api = async (action, extra = {}) => {
@@ -397,6 +443,7 @@ header('Content-Type: text/html; charset=utf-8');
       title.textContent = map[b.dataset.sec] || 'Extrator';
       if (b.dataset.sec === 'sites') loadSites();
       if (b.dataset.sec === 'lib') loadLib();
+      if (b.dataset.sec === 'tools') loadM3uList().catch(e => alert(e.message));
       if (b.dataset.sec === 'support') loadTickets().catch(e => alert(e.message));
       if (b.dataset.sec === 'shop') loadShop().catch(e => alert(e.message));
       if (b.dataset.sec === 'account') {
@@ -517,6 +564,116 @@ header('Content-Type: text/html; charset=utf-8');
     }
 
     document.getElementById('btnRefreshLib').addEventListener('click', () => loadLib().catch(e => alert(e.message)));
+
+    function fmtBytes(n) {
+      n = Number(n) || 0;
+      if (n < 1024) return n + ' B';
+      if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+      if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+      return (n / 1073741824).toFixed(2) + ' GB';
+    }
+
+    let m3uDlgId = 0;
+    let m3uDlgOffset = 0;
+    const m3uPageSize = 50;
+
+    async function loadM3uList() {
+      const j = await api('m3u_list');
+      const tb = document.querySelector('#m3uTbl tbody');
+      if (!tb) return;
+      tb.innerHTML = '';
+      for (const p of j.playlists || []) {
+        const tr = document.createElement('tr');
+        if (M3U_HIGHLIGHT && Number(p.id) === Number(M3U_HIGHLIGHT)) {
+          tr.style.background = 'rgba(59,109,246,0.15)';
+        }
+        const dlUrl = DOWNLOAD_URL + '?m3u_id=' + encodeURIComponent(p.id);
+        tr.innerHTML = '<td>' + escapeHtml(p.label || p.file_name) + '</td><td>' + fmtBytes(p.bytes) + '</td><td>' + (p.entry_count || 0) + '</td><td class="row-actions"><a href="' + dlUrl + '">M3U</a> <button type="button" data-m3u-view="' + p.id + '">Canais</button> <button type="button" class="danger" data-m3u-del="' + p.id + '">Apagar</button></td>';
+        tr.querySelector('[data-m3u-view]').addEventListener('click', () => openM3uDlg(Number(p.id), p.label || p.file_name, Number(p.entry_count || 0)));
+        tr.querySelector('[data-m3u-del]').addEventListener('click', async () => {
+          if (!confirm('Apagar esta lista?')) return;
+          try {
+            await api('m3u_delete', { id: p.id });
+            await loadM3uList();
+          } catch (e) { alert(e.message); }
+        });
+        tb.appendChild(tr);
+      }
+      if ((j.playlists || []).length === 0) {
+        tb.innerHTML = '<tr><td colspan="4" class="muted">Nenhuma lista. Guarde uma URL M3U acima ou clique Actualizar para importar ficheiros antigos em /data.</td></tr>';
+      }
+    }
+
+    document.getElementById('btnRefreshM3u').addEventListener('click', () => loadM3uList().catch(e => alert(e.message)));
+
+    const dlgM3u = document.getElementById('dlgM3u');
+    document.getElementById('m3uDlgClose').addEventListener('click', () => dlgM3u.close());
+
+    async function loadM3uEntriesPage() {
+      const j = await api('m3u_entries', { id: m3uDlgId, offset: m3uDlgOffset, limit: m3uPageSize });
+      const tb = document.querySelector('#m3uEntriesTbl tbody');
+      tb.innerHTML = '';
+      for (const e of j.entries || []) {
+        const tr = document.createElement('tr');
+        const short = e.url.length > 48 ? e.url.slice(0, 45) + '…' : e.url;
+        tr.innerHTML = '<td><input type="checkbox" class="m3u-ch" /></td><td></td><td></td><td><button type="button" class="m3u-dl-one">1×</button></td>';
+        tr.cells[1].textContent = e.title || '';
+        tr.cells[2].textContent = short;
+        tr.cells[2].title = e.url;
+        tr.querySelector('.m3u-ch').dataset.url = e.url;
+        tr.querySelector('.m3u-dl-one').addEventListener('click', async () => {
+          try {
+            await api('download_one', { url: e.url, filename: (e.title || 'canal').replace(/[^\w.-]+/g, '_').slice(0, 40) });
+            document.getElementById('m3uDlgStatus').textContent = 'Pedido enviado — veja Biblioteca.';
+          } catch (err) { document.getElementById('m3uDlgStatus').textContent = err.message; }
+        });
+        tb.appendChild(tr);
+      }
+      const total = Number(j.total || 0);
+      document.getElementById('m3uDlgMeta').textContent = 'A mostrar ' + (m3uDlgOffset + 1) + '–' + Math.min(m3uDlgOffset + m3uPageSize, total) + ' de ' + total + ' canais. Streams ao vivo (.ts) podem falhar; VOD/mp4 costuma funcionar.';
+      document.getElementById('m3uPrev').disabled = m3uDlgOffset <= 0;
+      document.getElementById('m3uNext').disabled = m3uDlgOffset + m3uPageSize >= total;
+    }
+
+    function openM3uDlg(id, label, total) {
+      m3uDlgId = id;
+      m3uDlgOffset = 0;
+      document.getElementById('m3uDlgTitle').textContent = label || 'Lista';
+      document.getElementById('m3uDlgStatus').textContent = '';
+      loadM3uEntriesPage().catch(e => { document.getElementById('m3uDlgStatus').textContent = e.message; });
+      dlgM3u.showModal();
+    }
+
+    document.getElementById('m3uPrev').addEventListener('click', () => {
+      m3uDlgOffset = Math.max(0, m3uDlgOffset - m3uPageSize);
+      loadM3uEntriesPage().catch(e => alert(e.message));
+    });
+    document.getElementById('m3uNext').addEventListener('click', () => {
+      m3uDlgOffset += m3uPageSize;
+      loadM3uEntriesPage().catch(e => alert(e.message));
+    });
+
+    document.getElementById('m3uDlSelected').addEventListener('click', async () => {
+      const boxes = document.querySelectorAll('.m3u-ch:checked');
+      if (!boxes.length) { alert('Seleccione pelo menos um canal.'); return; }
+      const st = document.getElementById('m3uDlgStatus');
+      let ok = 0;
+      for (const cb of boxes) {
+        const url = cb.getAttribute('data-url');
+        if (!url) continue;
+        try {
+          await api('download_one', { url });
+          ok++;
+        } catch (e) {
+          st.textContent = 'Erro em ' + url.slice(0, 40) + '…: ' + e.message;
+        }
+      }
+      st.textContent = 'Concluído: ' + ok + '/' + boxes.length + ' pedidos. Ficheiros na Biblioteca.';
+    });
+
+    if (location.hash === '#tools' || M3U_HIGHLIGHT) {
+      document.querySelector('nav button[data-sec="tools"]')?.click();
+    }
 
     let lastPaymentId = 0;
 

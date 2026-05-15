@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/crypto.php';
 require_once __DIR__ . '/includes/discover.php';
 require_once __DIR__ . '/includes/users.php';
+require_once __DIR__ . '/includes/m3u.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -228,6 +229,58 @@ try {
         ]);
         $fid = (int) $pdo->lastInsertId();
         echo json_encode(['ok' => true, 'file_id' => $fid, 'bytes' => $r['bytes'], 'name' => basename($dest), 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'm3u_list') {
+        $imported = extractor_m3u_import_orphans($pdo, $uid);
+        if ($super) {
+            $st = $pdo->query(
+                'SELECT id, user_id, label, file_name, source_url, bytes, entry_count, created_at FROM m3u_playlists ORDER BY id DESC LIMIT 100'
+            );
+            $rows = $st->fetchAll();
+        } else {
+            $st = $pdo->prepare(
+                'SELECT id, user_id, label, file_name, source_url, bytes, entry_count, created_at FROM m3u_playlists WHERE user_id = ? ORDER BY id DESC LIMIT 100'
+            );
+            $st->execute([$uid]);
+            $rows = $st->fetchAll();
+        }
+        echo json_encode(['ok' => true, 'playlists' => $rows, 'imported' => $imported]);
+        exit;
+    }
+
+    if ($action === 'm3u_entries') {
+        $id = (int) ($input['id'] ?? 0);
+        $offset = max(0, (int) ($input['offset'] ?? 0));
+        $limit = min(200, max(1, (int) ($input['limit'] ?? 50)));
+        $resolved = extractor_m3u_resolve_path($pdo, $id, $uid, $super);
+        if ($resolved === null) {
+            throw new RuntimeException('Lista não encontrada.');
+        }
+        $entries = extractor_m3u_list_entries($resolved['path'], $offset, $limit);
+        $total = 0;
+        $st = $pdo->prepare('SELECT entry_count FROM m3u_playlists WHERE id = ?');
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if ($row) {
+            $total = (int) $row['entry_count'];
+        }
+        echo json_encode(['ok' => true, 'entries' => $entries, 'offset' => $offset, 'total' => $total]);
+        exit;
+    }
+
+    if ($action === 'm3u_delete') {
+        $id = (int) ($input['id'] ?? 0);
+        $resolved = extractor_m3u_resolve_path($pdo, $id, $uid, $super);
+        if ($resolved === null) {
+            throw new RuntimeException('Lista não encontrada.');
+        }
+        $pdo->prepare('DELETE FROM m3u_playlists WHERE id = ?')->execute([$id]);
+        if (is_file($resolved['path'])) {
+            @unlink($resolved['path']);
+        }
+        echo json_encode(['ok' => true]);
         exit;
     }
 
