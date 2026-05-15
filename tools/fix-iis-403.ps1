@@ -1,4 +1,4 @@
-# Corrige HTTP 403 no IIS — permissões e autenticação anónima.
+# Corrige HTTP 403 no IIS - permissoes e autenticacao anonima.
 # Executar no VPS: PowerShell como Administrador
 #   cd C:\Apps\Extrator\tools
 #   .\fix-iis-403.ps1
@@ -12,23 +12,26 @@ if ($PSScriptRoot -match "Extrator") {
 $siteName = "Extrator"
 $poolName = "Extrator"
 if (-not (Test-Path "IIS:\Sites\$siteName")) {
-    $siteName = (Get-Website | Where-Object { $_.physicalPath -like "*Extrator*" } | Select-Object -First 1).Name
+    $found = Get-Website | Where-Object { $_.physicalPath -like "*Extrator*" } | Select-Object -First 1
+    if ($found) { $siteName = $found.Name }
 }
-if ($siteName) {
+if ($siteName -and (Test-Path "IIS:\Sites\$siteName")) {
     $poolName = (Get-Website -Name $siteName).applicationPool
     Write-Host "Site IIS: $siteName | Pool: $poolName" -ForegroundColor Cyan
 } else {
-    Write-Host "AVISO: site Extrator nao encontrado no IIS — ajuste `$siteName no script." -ForegroundColor Yellow
+    Write-Host "AVISO: site Extrator nao encontrado no IIS - ajuste siteName no script." -ForegroundColor Yellow
     $poolName = "ExtratorPool"
 }
 
 $poolIdentity = "IIS AppPool\$poolName"
 Write-Host "Raiz: $siteRoot" -ForegroundColor Cyan
 
-# Leitura na raiz do site; escrita só em data
 icacls $siteRoot /grant "IIS_IUSRS:(OI)(CI)RX" /T | Out-Null
 icacls $siteRoot /grant "${poolIdentity}:(OI)(CI)RX" /T | Out-Null
-icacls (Join-Path $siteRoot "data") /grant "${poolIdentity}:(OI)(CI)M" /T | Out-Null
+$dataPath = Join-Path $siteRoot "data"
+if (Test-Path $dataPath) {
+    icacls $dataPath /grant "${poolIdentity}:(OI)(CI)M" /T | Out-Null
+}
 Write-Host "Permissoes icacls aplicadas." -ForegroundColor Green
 
 Import-Module WebAdministration -ErrorAction SilentlyContinue
@@ -40,9 +43,5 @@ if (Get-Module WebAdministration) {
 }
 
 Write-Host ""
-Write-Host "Reinicie IIS:" -ForegroundColor Yellow
-Write-Host "  iisreset"
-Write-Host ""
-Write-Host "Teste no PC:" -ForegroundColor Yellow
-Write-Host "  http://ext.buscaapp.com/"
-Write-Host "  http://ext.buscaapp.com/health.php"
+Write-Host "Reinicie IIS: iisreset" -ForegroundColor Yellow
+Write-Host "Teste: http://ext.buscaapp.com/health.php" -ForegroundColor Yellow
