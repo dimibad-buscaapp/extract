@@ -125,7 +125,7 @@ $css = extractor_url('static/landing.css');
                 $sel = $c === $defaultCode ? ' selected' : '';
             ?>
             <option value="<?= h($c) ?>"<?= $sel ?>>
-              <?= h((string) $p['display_name']) ?> — <?= number_format((float) $p['price_monthly'], 2, ',', ' ') ?> €/mês (<?= (int) $p['monthly_credits'] ?> créditos)
+              <?= h((string) $p['display_name']) ?> — <?= h(extractor_money((float) $p['price_monthly'])) ?>/mês (<?= (int) $p['monthly_credits'] ?> créditos)
             </option>
           <?php endforeach; ?>
         </select>

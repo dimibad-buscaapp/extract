@@ -211,7 +211,7 @@ $home = extractor_url('index.php');
         <article class="plan<?= $code === 'master' ? ' featured' : '' ?>">
           <h3><?= h((string) ($p['display_name'] ?? '')) ?></h3>
           <p class="plan-blurb"><?= h(extractor_plan_blurb($code)) ?></p>
-          <div class="price"><?= number_format((float) ($p['price_monthly'] ?? 0), 2, ',', ' ') ?> €<small>/mês</small></div>
+          <div class="price"><?= h(extractor_money((float) ($p['price_monthly'] ?? 0))) ?><small>/mês</small></div>
           <ul>
             <li><?= (int) ($p['monthly_credits'] ?? 0) ?> créditos por mês</li>
             <li><?= (int) ($p['max_subusers'] ?? 0) > 0 ? 'Até ' . (int) $p['max_subusers'] . ' utilizadores na conta' : 'Uso individual' ?></li>

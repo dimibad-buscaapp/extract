@@ -306,6 +306,9 @@ try {
 
     if ($action === 'pix_create') {
         require_once __DIR__ . '/includes/billing.php';
+        require_once __DIR__ . '/includes/payment_settings.php';
+        require_once __DIR__ . '/includes/mercadopago.php';
+        $pcfg = extractor_payment_config($cfg);
         $planCode = trim((string) ($input['plan_code'] ?? ''));
         if ($planCode === '' || $planCode === 'super_master') {
             throw new RuntimeException('Plano inválido.');
@@ -320,15 +323,20 @@ try {
         if ($amount <= 0) {
             throw new RuntimeException('Este plano não tem preço configurado para cobrança PIX.');
         }
+        $provider = (string) ($pcfg['payment_provider'] ?? 'demo');
         $now = time();
         $pdo->prepare(
             'INSERT INTO payments (user_id, plan_code, amount, currency, status, provider, created_at) VALUES (?,?,?,?,?,?,?)'
-        )->execute([$uid, $planCode, $amount, 'BRL', 'pending', 'asaas', $now]);
+        )->execute([$uid, $planCode, $amount, 'BRL', 'pending', $provider === 'asaas' ? 'asaas' : ($provider === 'mercadopago' ? 'mercadopago' : 'demo'), $now]);
         $lid = (int) $pdo->lastInsertId();
         $pix = '';
         $demo = true;
-        if (trim((string) ($cfg['asaas_api_key'] ?? '')) !== '') {
-            $r = extractor_asaas_create_pix_for_payment($pdo, $cfg, $lid);
+        if ($provider === 'mercadopago' && trim((string) ($pcfg['mercadopago_access_token'] ?? '')) !== '') {
+            $r = extractor_mercadopago_create_pix($pdo, $pcfg, $lid);
+            $pix = $r['pix_copy_paste'];
+            $demo = $pix === '';
+        } elseif ($provider === 'asaas' && trim((string) ($pcfg['asaas_api_key'] ?? '')) !== '') {
+            $r = extractor_asaas_create_pix_for_payment($pdo, $pcfg, $lid);
             $pix = $r['pix_copy_paste'];
             $demo = $pix === '';
         }
@@ -336,9 +344,11 @@ try {
             'ok' => true,
             'payment_id' => $lid,
             'amount' => $amount,
+            'amount_formatted' => extractor_money($amount),
             'plan_code' => $planCode,
             'pix_copy_paste' => $pix,
             'demo_mode' => $demo,
+            'provider' => $provider,
             'credits' => (int) ($_SESSION['user_credits'] ?? 0),
         ]);
         exit;
@@ -346,6 +356,9 @@ try {
 
     if ($action === 'pix_status') {
         require_once __DIR__ . '/includes/billing.php';
+        require_once __DIR__ . '/includes/payment_settings.php';
+        require_once __DIR__ . '/includes/mercadopago.php';
+        $pcfg = extractor_payment_config($cfg);
         $pid = (int) ($input['payment_id'] ?? 0);
         if ($pid < 1) {
             throw new RuntimeException('ID inválido.');
@@ -356,10 +369,16 @@ try {
         if (!$pay) {
             throw new RuntimeException('Pagamento não encontrado.');
         }
-        if (($pay['status'] ?? '') === 'pending' && trim((string) ($cfg['asaas_api_key'] ?? '')) !== '') {
-            extractor_fulfil_payment_if_paid($pdo, $cfg, $pid);
+        if (($pay['status'] ?? '') === 'pending') {
+            $prov = (string) ($pay['provider'] ?? '');
+            if ($prov === 'mercadopago' && trim((string) ($pcfg['mercadopago_access_token'] ?? '')) !== '') {
+                extractor_mercadopago_fulfil_if_approved($pdo, $cfg, $pid);
+            } elseif ($prov === 'asaas' && trim((string) ($pcfg['asaas_api_key'] ?? '')) !== '') {
+                extractor_fulfil_payment_if_paid($pdo, $pcfg, $pid);
+            }
             $st->execute([$pid, $uid]);
             $pay = $st->fetch();
+            extractor_user_refresh_session($pdo);
         }
         echo json_encode([
             'ok' => true,

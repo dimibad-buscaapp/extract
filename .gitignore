@@ -21,6 +21,8 @@ config.local.php
 /data/sessions/*
 !/data/sessions/.gitkeep
 
+/data/payment_settings.json
+
 # Ferramenta VPS (.NET publish local)
 tools/vps-install/bin/
 tools/vps-install/obj/

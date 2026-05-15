@@ -26,11 +26,20 @@ return [
     /** Créditos por pedido de descoberta de links (0 = grátis) */
     'credits_per_discover' => 0,
 
-    /** Asaas (PIX): deixe asaas_api_key vazio para modo só registo local / instruções */
+    /** Pagamentos: mercadopago | asaas | demo (sem API) */
+    'payment_provider' => 'mercadopago',
+
+    /** Mercado Pago — Access Token (produção ou teste) em https://www.mercadopago.com.br/developers */
+    'mercadopago_access_token' => '',
+    'mercadopago_public_key' => '',
+    /** true = credenciais de teste */
+    'mercadopago_sandbox' => true,
+    /** Opcional: validar notificações (x-signature) */
+    'mercadopago_webhook_secret' => '',
+
+    /** Asaas (alternativa PIX) */
     'asaas_api_key' => '',
-    /** true = https://sandbox.asaas.com — false = produção */
     'asaas_sandbox' => true,
-    /** Opcional: mesmo valor que configurar no painel Asaas “token de autenticação” do webhook; vazio = não valida cabeçalho */
     'asaas_webhook_token' => '',
 
     /**

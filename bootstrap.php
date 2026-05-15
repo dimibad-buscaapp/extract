@@ -9,6 +9,10 @@ const EXTRACTOR_BUILD_ID = '2026-05-15-60d886f';
 define('EXTRACTOR_ROOT', __DIR__);
 define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
 
+if (is_file(__DIR__ . '/includes/format.php')) {
+    require_once __DIR__ . '/includes/format.php';
+}
+
 if (is_file(__DIR__ . '/includes/urls.php')) {
     require_once __DIR__ . '/includes/urls.php';
     extractor_prepare_runtime();
@@ -152,6 +156,11 @@ function extractor_config(): array
         'recaptcha_secret_key' => trim((string) ($loaded['recaptcha_secret_key'] ?? '')),
         'credits_per_download' => max(0, (int) ($loaded['credits_per_download'] ?? 1)),
         'credits_per_discover' => max(0, (int) ($loaded['credits_per_discover'] ?? 0)),
+        'payment_provider' => trim((string) ($loaded['payment_provider'] ?? 'mercadopago')),
+        'mercadopago_access_token' => trim((string) ($loaded['mercadopago_access_token'] ?? '')),
+        'mercadopago_public_key' => trim((string) ($loaded['mercadopago_public_key'] ?? '')),
+        'mercadopago_sandbox' => (bool) ($loaded['mercadopago_sandbox'] ?? true),
+        'mercadopago_webhook_secret' => trim((string) ($loaded['mercadopago_webhook_secret'] ?? '')),
         'asaas_api_key' => trim((string) ($loaded['asaas_api_key'] ?? '')),
         'asaas_sandbox' => (bool) ($loaded['asaas_sandbox'] ?? true),
         'asaas_webhook_token' => trim((string) ($loaded['asaas_webhook_token'] ?? '')),
@@ -162,7 +171,9 @@ function extractor_config(): array
     if (strlen($tmp['app_secret']) < 16 || $tmp['app_secret'] === 'COLOQUE_UM_SEGREDO_LONGO_ALEATORIO') {
         throw new RuntimeException('Defina app_secret (>=16 chars) em config.local.php.');
     }
-    $cached = $tmp;
+    require_once __DIR__ . '/includes/payment_settings.php';
+    $cached = extractor_payment_config($tmp);
+
     return $cached;
 }
 

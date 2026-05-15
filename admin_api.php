@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/users.php';
+require_once __DIR__ . '/includes/payment_settings.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -331,6 +332,140 @@ try {
         exit;
     }
 
+    if ($action === 'admin_plan_save') {
+        if (!$isSuper) {
+            throw new RuntimeException('Apenas Super Master.');
+        }
+        $code = strtolower(trim((string) ($input['code'] ?? '')));
+        $isNew = !empty($input['is_new']);
+        if (!preg_match('/^[a-z][a-z0-9_]{1,31}$/', $code)) {
+            throw new RuntimeException('Código inválido (a-z, 0-9, _, mín. 2 caracteres).');
+        }
+        if ($code === 'super_master') {
+            throw new RuntimeException('O plano super_master não pode ser criado manualmente.');
+        }
+        $displayName = trim((string) ($input['display_name'] ?? ''));
+        $role = trim((string) ($input['role'] ?? 'user'));
+        $monthlyCredits = max(0, (int) ($input['monthly_credits'] ?? 0));
+        $priceMonthly = round((float) ($input['price_monthly'] ?? 0), 2);
+        $maxSubusers = max(0, (int) ($input['max_subusers'] ?? 0));
+        $canResell = !empty($input['can_resell']) ? 1 : 0;
+        if ($displayName === '' || strlen($displayName) > 120) {
+            throw new RuntimeException('Nome de exibição inválido.');
+        }
+        if (!in_array($role, ['user', 'reseller', 'master', 'super_master'], true)) {
+            throw new RuntimeException('Papel inválido.');
+        }
+        $exists = $pdo->prepare('SELECT 1 FROM plans WHERE code = ?');
+        $exists->execute([$code]);
+        $has = (bool) $exists->fetchColumn();
+        if ($isNew && $has) {
+            throw new RuntimeException('Já existe um plano com este código.');
+        }
+        if (!$isNew && !$has) {
+            throw new RuntimeException('Plano não encontrado.');
+        }
+        if ($isNew) {
+            $pdo->prepare(
+                'INSERT INTO plans (code, display_name, role, monthly_credits, price_monthly, max_subusers, can_resell) VALUES (?,?,?,?,?,?,?)'
+            )->execute([$code, $displayName, $role, $monthlyCredits, $priceMonthly, $maxSubusers, $canResell]);
+            extractor_audit_log($pdo, $actorId, 'plan_create', 'code=' . $code);
+        } else {
+            $pdo->prepare(
+                'UPDATE plans SET display_name=?, role=?, monthly_credits=?, price_monthly=?, max_subusers=?, can_resell=? WHERE code=?'
+            )->execute([$displayName, $role, $monthlyCredits, $priceMonthly, $maxSubusers, $canResell, $code]);
+            extractor_audit_log($pdo, $actorId, 'plan_save', 'code=' . $code);
+        }
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    if ($action === 'admin_plan_delete') {
+        if (!$isSuper) {
+            throw new RuntimeException('Apenas Super Master.');
+        }
+        $code = strtolower(trim((string) ($input['code'] ?? '')));
+        if ($code === '' || $code === 'super_master') {
+            throw new RuntimeException('Não pode apagar este plano.');
+        }
+        $st = $pdo->prepare('SELECT COUNT(*) FROM users WHERE plan_code = ?');
+        $st->execute([$code]);
+        if ((int) $st->fetchColumn() > 0) {
+            throw new RuntimeException('Existem utilizadores neste plano; migre-os antes de apagar.');
+        }
+        $pdo->prepare('DELETE FROM plans WHERE code = ?')->execute([$code]);
+        extractor_audit_log($pdo, $actorId, 'plan_delete', 'code=' . $code);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    if ($action === 'admin_payment_settings_get') {
+        if (!$isSuper) {
+            throw new RuntimeException('Apenas Super Master.');
+        }
+        $pcfg = extractor_payment_config($cfg);
+        $mpTok = trim((string) ($pcfg['mercadopago_access_token'] ?? ''));
+        $asaasKey = trim((string) ($pcfg['asaas_api_key'] ?? ''));
+        $mask = static function (string $s): string {
+            if ($s === '') {
+                return '';
+            }
+            if (strlen($s) <= 8) {
+                return '••••••••';
+            }
+
+            return substr($s, 0, 6) . '…' . substr($s, -4);
+        };
+        echo json_encode([
+            'ok' => true,
+            'settings' => [
+                'payment_provider' => (string) ($pcfg['payment_provider'] ?? 'mercadopago'),
+                'mercadopago_access_token_masked' => $mask($mpTok),
+                'mercadopago_access_token_set' => $mpTok !== '',
+                'mercadopago_public_key' => (string) ($pcfg['mercadopago_public_key'] ?? ''),
+                'mercadopago_sandbox' => (bool) ($pcfg['mercadopago_sandbox'] ?? true),
+                'mercadopago_webhook_secret' => (string) ($pcfg['mercadopago_webhook_secret'] ?? ''),
+                'asaas_api_key_masked' => $mask($asaasKey),
+                'asaas_api_key_set' => $asaasKey !== '',
+                'asaas_sandbox' => (bool) ($pcfg['asaas_sandbox'] ?? true),
+                'asaas_webhook_token' => (string) ($pcfg['asaas_webhook_token'] ?? ''),
+                'configured' => extractor_payment_provider_configured($pcfg),
+            ],
+            'webhook_url' => extractor_absolute_url('billing_webhook.php'),
+        ]);
+        exit;
+    }
+
+    if ($action === 'admin_payment_settings_save') {
+        if (!$isSuper) {
+            throw new RuntimeException('Apenas Super Master.');
+        }
+        $provider = trim((string) ($input['payment_provider'] ?? 'mercadopago'));
+        if (!in_array($provider, ['mercadopago', 'asaas', 'demo'], true)) {
+            throw new RuntimeException('Provedor inválido.');
+        }
+        $patch = [
+            'payment_provider' => $provider,
+            'mercadopago_public_key' => trim((string) ($input['mercadopago_public_key'] ?? '')),
+            'mercadopago_sandbox' => !empty($input['mercadopago_sandbox']),
+            'mercadopago_webhook_secret' => trim((string) ($input['mercadopago_webhook_secret'] ?? '')),
+            'asaas_sandbox' => !empty($input['asaas_sandbox']),
+            'asaas_webhook_token' => trim((string) ($input['asaas_webhook_token'] ?? '')),
+        ];
+        $mpNew = trim((string) ($input['mercadopago_access_token'] ?? ''));
+        if ($mpNew !== '') {
+            $patch['mercadopago_access_token'] = $mpNew;
+        }
+        $asaasNew = trim((string) ($input['asaas_api_key'] ?? ''));
+        if ($asaasNew !== '') {
+            $patch['asaas_api_key'] = $asaasNew;
+        }
+        extractor_payment_settings_save($patch);
+        extractor_audit_log($pdo, $actorId, 'payment_settings_save', 'provider=' . $provider);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     if ($action === 'admin_audit_list') {
         if (!$isSuper) {
             throw new RuntimeException('Apenas Super Master pode ver auditoria.');
@@ -362,7 +497,10 @@ try {
                 'http_timeout' => (int) $cfg['http_timeout'],
                 'recaptcha_configured' => ($cfg['recaptcha_site_key'] ?? '') !== '' && ($cfg['recaptcha_secret_key'] ?? '') !== '',
                 'app_secret_masked' => $masked,
-                'asaas_configured' => ($cfg['asaas_api_key'] ?? '') !== '',
+                'payment_provider' => (string) (extractor_payment_config($cfg)['payment_provider'] ?? ''),
+                'payment_configured' => extractor_payment_provider_configured(extractor_payment_config($cfg)),
+                'asaas_configured' => trim((string) (extractor_payment_config($cfg)['asaas_api_key'] ?? '')) !== '',
+                'mercadopago_configured' => trim((string) (extractor_payment_config($cfg)['mercadopago_access_token'] ?? '')) !== '',
             ],
         ]);
         exit;

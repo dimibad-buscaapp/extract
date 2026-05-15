@@ -260,7 +260,7 @@ header('Content-Type: text/html; charset=utf-8');
 
     <section id="sec-shop" class="sec">
       <div class="card">
-        <p class="muted">Gere uma cobrança PIX (Asaas). Sem chave API configurada no servidor, o pedido fica registado localmente em modo demonstração.</p>
+        <p class="muted">Gere uma cobrança PIX (Mercado Pago ou Asaas, conforme configurado em Admin → Financeiro). Sem API configurada, o pedido fica em modo demonstração.</p>
         <label>Plano</label>
         <select id="shopPlan"></select>
         <button type="button" class="primary" id="btnPix">Gerar cobrança PIX</button>
@@ -344,7 +344,8 @@ header('Content-Type: text/html; charset=utf-8');
       <input id="spass" type="password" />
       <label>Cookie de sessão (opcional; DevTools → rede)</label>
       <input id="scook" placeholder="PHPSESSID=..." />
-      <label><input type="checkbox" id="ssame" checked /> Só mesmo domínio na descoberta</label>
+      <label><input type="checkbox" id="ssame" checked /> Só listar links do mesmo site que a URL base</label>
+      <p class="muted" style="font-size:0.82rem;margin:0.25rem 0 0;">Ignora links externos (CDN, redes sociais, outros domínios) ao descobrir ficheiros na página.</p>
       <div class="dlg-actions">
         <button type="button" class="secondary" id="dlgCancel">Cancelar</button>
         <button type="button" class="primary" id="dlgSave">Guardar</button>
@@ -528,11 +529,11 @@ header('Content-Type: text/html; charset=utf-8');
         const j = await api('pix_create', { plan_code });
         lastPaymentId = j.payment_id;
         document.getElementById('btnPixStatus').disabled = !lastPaymentId;
-        let t = 'Pagamento #' + j.payment_id + ' — R$ ' + Number(j.amount).toFixed(2) + '\n';
+        let t = 'Pagamento #' + j.payment_id + ' — ' + (j.amount_formatted || ('R$ ' + Number(j.amount).toFixed(2))) + '\n';
         if (j.demo_mode) {
-          t += 'Modo demonstração: configure asaas_api_key em config.local.php para QR real.\n';
+          t += 'Modo demonstração: configure Mercado Pago ou Asaas em Admin → Financeiro.\n';
         }
-        t += (j.pix_copy_paste ? ('Copia e cola PIX:\n' + j.pix_copy_paste) : '(sem payload PIX ainda — aguarde integração ou verifique no Asaas)');
+        t += (j.pix_copy_paste ? ('Copia e cola PIX:\n' + j.pix_copy_paste) : '(sem código PIX — verifique as credenciais do provedor)');
         out.textContent = t;
       } catch (e) { alert(e.message); }
     });
