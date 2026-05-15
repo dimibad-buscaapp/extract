@@ -4,18 +4,27 @@ declare(strict_types=1);
 
 const EXTRACTOR_PHP_VERSION = '1.1.0';
 
+define('EXTRACTOR_ROOT', __DIR__);
+define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
+
+if (!is_dir(EXTRACTOR_DATA)) {
+    @mkdir(EXTRACTOR_DATA, 0700, true);
+}
+
+$sessionsDir = EXTRACTOR_DATA . '/sessions';
+if (!is_dir($sessionsDir)) {
+    @mkdir($sessionsDir, 0700, true);
+}
+// No IIS o pool muitas vezes não grava bem em %SystemRoot%\TEMP; usar pasta do projecto evita falhas em session_start / registo.
+if (is_dir($sessionsDir) && is_writable($sessionsDir)) {
+    ini_set('session.save_path', $sessionsDir);
+}
+
 session_start([
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
     'use_strict_mode' => true,
 ]);
-
-define('EXTRACTOR_ROOT', __DIR__);
-define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
-
-if (!is_dir(EXTRACTOR_DATA)) {
-    mkdir(EXTRACTOR_DATA, 0700, true);
-}
 
 function extractor_config_path(): string
 {

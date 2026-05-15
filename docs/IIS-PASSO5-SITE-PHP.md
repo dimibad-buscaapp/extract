@@ -134,7 +134,9 @@ Teste no servidor: **`http://127.0.0.1/`** (se binding vazio) ou **`http://127.0
 
 ---
 
-## 5.6 — Permissões em `data`
+## 5.6 — Permissões em `data` e `data\sessions`
+
+O PHP grava **sessões** em `data/sessions` (definido em `bootstrap.php`). O pool IIS precisa de **Modificar** em **`data`** (recursivo), para **SQLite** e para **sessões**.
 
 No PowerShell **como administrador** (ajusta o nome do pool se for outro):
 
@@ -155,7 +157,7 @@ Quando **HTTP** estiver estável, adiciona ligação **https**, porta **443**, c
 ## 5.8 — Se aparecer erro 500 ou página em branco
 
 - **Visualizador de eventos** → Registos do Windows → Aplicação (origem **IIS AspNetCore** / FastCGI / erros PHP se `log_errors` estiver activo).  
-- Confirma **`php.ini`** e que **`C:\apps\Extrator\data`** é gravável pelo pool.
+- Confirma **`php.ini`** e que **`C:\apps\Extrator\data`** (e **`data\sessions`**) é gravável pelo pool.
 
 Guia geral de DNS e firewall: [`CONFIGURAR-SITE-IIS-DNS.md`](CONFIGURAR-SITE-IIS-DNS.md) · problemas de ligação: [`SITE-NAO-ABRE-VPS.md`](SITE-NAO-ABRE-VPS.md).
 
@@ -163,7 +165,7 @@ Guia geral de DNS e firewall: [`CONFIGURAR-SITE-IIS-DNS.md`](CONFIGURAR-SITE-IIS
 
 1. **Recarrega** o código no servidor (`git pull`) para trazer **`web.config`** na raiz do site — ajuda o IIS a mostrar **mensagens de erro do PHP** em vez da página genérica “500”.
 2. No **`C:\PHP\php.ini`**: temporariamente `display_errors = On`, `log_errors = On` e por exemplo `error_log = "C:\PHP\logs\php-errors.log"` (cria a pasta `C:\PHP\logs`). Depois de `iisreset`, reproduz o erro e abre esse log.
-3. **Permissões** em **`C:\Apps\Extrator\data`**: o pool (ex.: `IIS AppPool\Extrat`) precisa de **Modificar** para criar **`app.sqlite`**.  
+3. **Permissões** em **`C:\Apps\Extrator\data`** (inclui **`data\sessions`** para o PHP): o pool precisa de **Modificar** para criar **`app.sqlite`** e ficheiros de sessão.  
    `icacls "C:\Apps\Extrator\data" /grant "IIS AppPool\Extrat:(OI)(CI)M" /T`  
    (ajusta **`Extrat`** ao nome real do teu pool.)
 4. **Visualizador de eventos** do Windows → Registos de aplicações → **Application** (avisos/erros do IIS ou FastCGI).

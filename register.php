@@ -34,14 +34,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         extractor_verify_recaptcha_if_configured();
         $errors = extractor_register_user($pdo, $_POST);
         if ($errors === []) {
-            extractor_login_user($pdo, (string) ($_POST['email'] ?? ''), (string) ($_POST['password'] ?? ''));
-            header('Location: panel.php');
-            exit;
+            $loginErr = extractor_login_user($pdo, (string) ($_POST['email'] ?? ''), (string) ($_POST['password'] ?? ''));
+            if ($loginErr !== '') {
+                $errors[] = $loginErr;
+            } else {
+                header('Location: panel.php');
+                exit;
+            }
         }
     } catch (RuntimeException $e) {
         $errors[] = $e->getMessage();
-    } catch (Throwable) {
-        $errors[] = 'Erro ao processar o registo.';
+    } catch (Throwable $e) {
+        error_log('[Extrator register] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        $errors[] = getenv('EXTRACTOR_DEBUG') === '1'
+            ? $e->getMessage()
+            : 'Erro ao processar o registo.';
     }
 }
 

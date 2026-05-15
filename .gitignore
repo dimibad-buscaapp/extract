@@ -17,6 +17,10 @@ config.local.php
 /data/out/*
 !/data/out/.htaccess
 
+# Sessões PHP (IIS / gravável pelo pool)
+/data/sessions/*
+!/data/sessions/.gitkeep
+
 # Ferramenta VPS (.NET publish local)
 tools/vps-install/bin/
 tools/vps-install/obj/
