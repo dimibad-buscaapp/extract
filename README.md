@@ -25,6 +25,8 @@ O painel público está previsto para **`https://ext.buscaapp.com/`** (SSL no se
 
 **Domínio/DNS na Hostinger, ficheiros no teu VPS (cenário misto):** ver [`docs/DOMINIO-HOSTINGER-SITE-VPS.md`](docs/DOMINIO-HOSTINGER-SITE-VPS.md).
 
+**Página não abre (timeout, 404, 500, SSL):** ver [`docs/SITE-NAO-ABRE-VPS.md`](docs/SITE-NAO-ABRE-VPS.md).
+
 ## Instalação na Hostinger
 
 1. Crie uma pasta em **`public_html`** ou aponte o subdomínio **`ext.buscaapp.com`** para a pasta onde enviar os ficheiros (pode ser a raiz do subdomínio).
