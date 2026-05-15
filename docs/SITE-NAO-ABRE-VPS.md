@@ -96,4 +96,45 @@ Se existir mas com `app_secret` inválido, a app pode mostrar erro. Se **não** 
 
 ---
 
+## 10. `ERR_CONNECTION_REFUSED` ao usar o IP (ex.: `http://108.181.169.40`)
+
+Significa que **na porta que estás a usar (80 para HTTP, 443 para HTTPS)** não há serviço a escutar **ou** o firewall (Windows ou do fornecedor) **bloqueia**.
+
+### A) Confirma o URL
+
+- Testa **`http://108.181.169.40/`** (porta **80**).  
+- **`https://...`** usa a porta **443**; se não tiveres site/certificado aí, pode falhar de outra forma — para diagnóstico usa primeiro **HTTP**.
+
+### B) No painel do VPS (fornecedor)
+
+Muitos servidores só deixam **RDP** (ex.: **1097**) aberta por defeito. Abre **TCP 80** e **TCP 443** nas regras de **firewall / security group / network ACL** do painel (não basta só no Windows).
+
+### C) No Windows Server (PowerShell como Administrador)
+
+Ver se alguém escuta na 80:
+
+```powershell
+Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue
+```
+
+Se **não** aparecer nada:
+
+1. Instala o **IIS** (função “Web Server (IIS)”) e o serviço **W3SVC** em execução.
+2. Garante que existe um **site** com ligação **HTTP na porta 80** (nome de anfitrião vazio para teste por IP).
+
+Firewall local:
+
+```powershell
+New-NetFirewallRule -DisplayName "HTTP 80" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
+New-NetFirewallRule -DisplayName "HTTPS 443" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+```
+
+(Regra duplicada pode dar aviso; ignora se já existir.)
+
+### D) Teste no próprio servidor
+
+No RDP, abre o browser em **`http://127.0.0.1/`**. Se **aqui** funcionar mas de fora continuar “refused”, o problema é quase de certeza **firewall do fornecedor** ou porta errada de fora.
+
+---
+
 Depois de identificar **uma** destas linhas (DNS vs IIS vs firewall vs PHP), corrigir só esse ponto costuma destravar o resto.
