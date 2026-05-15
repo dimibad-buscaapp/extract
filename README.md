@@ -27,6 +27,8 @@ O painel público está previsto para **`https://ext.buscaapp.com/`** (SSL no se
 
 **Página não abre (timeout, 404, 500, SSL):** ver [`docs/SITE-NAO-ABRE-VPS.md`](docs/SITE-NAO-ABRE-VPS.md).
 
+**IIS passo 5 — site em `C:\apps\Extrator` + PHP:** ver [`docs/IIS-PASSO5-SITE-PHP.md`](docs/IIS-PASSO5-SITE-PHP.md).
+
 ## Instalação na Hostinger
 
 1. Crie uma pasta em **`public_html`** ou aponte o subdomínio **`ext.buscaapp.com`** para a pasta onde enviar os ficheiros (pode ser a raiz do subdomínio).

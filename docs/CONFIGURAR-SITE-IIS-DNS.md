@@ -88,6 +88,8 @@ Abra as portas **HTTP (80)** e **HTTPS (443)** para o tráfego entrante:
 4. **Documento predefinido:** inclua **`index.php`** e coloque-o no topo se necessário.
 5. **Mapeamento de manipulador** para PHP: com o [PHP Manager for IIS](https://www.phpmanager.net/) ou registo manual do `php-cgi.exe` para `*.php`.
 
+Passo a passo alargado (PHP zip, `php.ini`, FastCGI, conflito porta 80, permissões `data`): [`IIS-PASSO5-SITE-PHP.md`](IIS-PASSO5-SITE-PHP.md).
+
 Reinicie o site ou o pool após alterações.
 
 ---
