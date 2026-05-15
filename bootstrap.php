@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 const EXTRACTOR_PHP_VERSION = '1.2.0';
 /** Altere quando publicar no servidor — confirme em /health.php */
-const EXTRACTOR_BUILD_ID = '2026-05-15-branding';
+const EXTRACTOR_BUILD_ID = '2026-05-15-m3u-stream';
 
 define('EXTRACTOR_ROOT', __DIR__);
 define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
@@ -325,11 +325,40 @@ function extractor_stream_url_to_file(string $url, string $destPath, array $extr
             fclose($in);
             fclose($out);
             @unlink($destPath);
-            return ['ok' => false, 'error' => 'Arquivo excede max_download_bytes', 'bytes' => 0];
+            return ['ok' => false, 'error' => 'Lista excede o limite configurado (max_download_bytes)', 'bytes' => 0];
         }
         fwrite($out, $chunk);
     }
     fclose($in);
     fclose($out);
     return ['ok' => true, 'error' => '', 'bytes' => $total];
+}
+
+function extractor_m3u_file_valid(string $path): bool
+{
+    if (!is_file($path)) {
+        return false;
+    }
+    $size = filesize($path);
+    if ($size === false || $size < 7) {
+        return false;
+    }
+    $head = file_get_contents($path, false, null, 0, 65536);
+
+    return $head !== false && str_contains($head, '#EXTM3U');
+}
+
+function extractor_format_bytes(int $bytes): string
+{
+    if ($bytes < 1024) {
+        return $bytes . ' B';
+    }
+    if ($bytes < 1048576) {
+        return round($bytes / 1024, 1) . ' KB';
+    }
+    if ($bytes < 1073741824) {
+        return round($bytes / 1048576, 1) . ' MB';
+    }
+
+    return round($bytes / 1073741824, 2) . ' GB';
 }

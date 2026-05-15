@@ -33,27 +33,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($form === 'm3u') {
         $url = trim((string) ($_POST['m3u_url'] ?? ''));
         $text = (string) ($_POST['m3u_text'] ?? '');
-        $body = null;
         if ($url !== '') {
-            $r = extractor_http_get($url);
+            $fn = EXTRACTOR_DATA . '/lista_' . date('Ymd_His') . '.m3u';
+            $r = extractor_stream_url_to_file($url, $fn);
             if (!$r['ok']) {
-                $_SESSION['flash'] = ['type' => 'err', 'msg' => 'M3U URL: ' . ($r['error'] ?: 'erro')];
+                $_SESSION['flash'] = ['type' => 'err', 'msg' => 'M3U URL: ' . ($r['error'] ?: 'erro ao descarregar')];
+                if (is_file($fn)) {
+                    @unlink($fn);
+                }
+            } elseif (!extractor_m3u_file_valid($fn)) {
+                @unlink($fn);
+                $_SESSION['flash'] = ['type' => 'err', 'msg' => 'Resposta não parece um M3U válido (#EXTM3U).'];
             } else {
-                $body = (string) $r['body'];
+                $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U salvo em /data (' . extractor_format_bytes((int) $r['bytes']) . ').'];
             }
         } elseif ($text !== '') {
-            $body = $text;
-        } else {
-            $_SESSION['flash'] = ['type' => 'err', 'msg' => 'Informe a URL do M3U ou cole o conteúdo.'];
-        }
-        if ($body !== null && empty($_SESSION['flash'])) {
-            if (!str_contains($body, '#EXTM3U')) {
+            if (strlen($text) > 4 * 1024 * 1024) {
+                $_SESSION['flash'] = ['type' => 'err', 'msg' => 'M3U colado demasiado grande (máx. 4 MB). Use o campo URL.'];
+            } elseif (!str_contains($text, '#EXTM3U')) {
                 $_SESSION['flash'] = ['type' => 'err', 'msg' => 'Conteúdo não parece um M3U válido.'];
             } else {
                 $fn = EXTRACTOR_DATA . '/lista_' . date('Ymd_His') . '.m3u';
-                file_put_contents($fn, $body);
-                $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U salvo.'];
+                file_put_contents($fn, $text);
+                $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U salvo (' . extractor_format_bytes(strlen($text)) . ').'];
             }
+        } else {
+            $_SESSION['flash'] = ['type' => 'err', 'msg' => 'Informe a URL do M3U ou cole o conteúdo.'];
         }
         header('Location: ' . extractor_url('panel.php') . '#tools');
         exit;
@@ -75,14 +80,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['flash'] = ['type' => 'err', 'msg' => 'Xtream API: ' . ($info['error'] ?: 'falha')];
             } else {
                 $m3uUrl = $base . '/get.php?username=' . rawurlencode($user) . '&password=' . rawurlencode($pass) . '&type=m3u_plus&output=ts';
-                $m3u = extractor_http_get($m3uUrl);
-                if (!$m3u['ok'] || !str_contains((string) $m3u['body'], '#EXTM3U')) {
+                $m3uPath = EXTRACTOR_DATA . '/lista_xtream_' . date('Ymd_His') . '.m3u';
+                $m3u = extractor_stream_url_to_file($m3uUrl, $m3uPath);
+                if (!$m3u['ok'] || !extractor_m3u_file_valid($m3uPath)) {
+                    if (is_file($m3uPath)) {
+                        @unlink($m3uPath);
+                    }
                     file_put_contents(EXTRACTOR_DATA . '/xtream_info_' . date('Ymd_His') . '.json', (string) $info['body']);
                     file_put_contents(EXTRACTOR_DATA . '/playlist_url_' . date('Ymd_His') . '.txt', $m3uUrl . "\n");
-                    $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U automática falhou; JSON e URL guardados em /data.'];
+                    $detail = $m3u['error'] !== '' ? ' (' . $m3u['error'] . ')' : '';
+                    $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U automática falhou' . $detail . '; JSON e URL guardados em /data.'];
                 } else {
-                    file_put_contents(EXTRACTOR_DATA . '/lista_xtream_' . date('Ymd_His') . '.m3u', (string) $m3u['body']);
-                    $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'Lista M3U Xtream salva.'];
+                    $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'Lista M3U Xtream salva (' . extractor_format_bytes((int) $m3u['bytes']) . ').'];
                 }
             }
         }
@@ -223,6 +232,7 @@ header('Content-Type: text/html; charset=utf-8');
     <section id="sec-tools" class="sec">
       <div class="card">
         <h2 style="margin-top:0;">M3U</h2>
+        <p class="muted" style="margin:0 0 0.75rem;">Listas grandes são descarregadas directamente para <code>/data</code> (sem carregar tudo na memória). Limite: <code>max_download_bytes</code> no config (predef. 200 MB).</p>
         <form method="post" action="<?= h(extractor_url('panel.php')) ?>">
           <input type="hidden" name="csrf" value="<?= h($csrf) ?>" />
           <input type="hidden" name="form" value="m3u" />
