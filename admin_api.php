@@ -6,6 +6,7 @@ require __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/users.php';
 require_once __DIR__ . '/includes/payment_settings.php';
+require_once __DIR__ . '/includes/branding.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -25,6 +26,18 @@ $raw = file_get_contents('php://input') ?: '';
 $input = json_decode($raw, true);
 if (!is_array($input)) {
     $input = [];
+}
+if (isset($_POST['payload']) && is_string($_POST['payload'])) {
+    $pl = json_decode($_POST['payload'], true);
+    if (is_array($pl)) {
+        $input = array_merge($input, $pl);
+    }
+}
+if (isset($_POST['action']) && ($input['action'] ?? '') === '') {
+    $input['action'] = (string) $_POST['action'];
+}
+if (isset($_POST['csrf']) && ($input['csrf'] ?? '') === '') {
+    $input['csrf'] = (string) $_POST['csrf'];
 }
 
 $csrf = (string) ($input['csrf'] ?? '');
@@ -467,6 +480,59 @@ try {
         extractor_payment_settings_save($patch);
         extractor_audit_log($pdo, $actorId, 'payment_settings_save', 'provider=' . $provider);
         echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    if ($action === 'admin_branding_get') {
+        if (!$isSuper) {
+            throw new RuntimeException('Apenas Super Master.');
+        }
+        $plans = $pdo->query(
+            'SELECT code, display_name FROM plans WHERE code != \'super_master\' ORDER BY monthly_credits ASC'
+        )->fetchAll();
+        echo json_encode([
+            'ok' => true,
+            'branding' => extractor_branding(),
+            'logo_url' => extractor_branding_asset_url('logo'),
+            'favicon_url' => extractor_branding_asset_url('favicon'),
+            'plans' => $plans,
+        ]);
+        exit;
+    }
+
+    if ($action === 'admin_branding_save') {
+        if (!$isSuper) {
+            throw new RuntimeException('Apenas Super Master.');
+        }
+        $content = $input['content'] ?? null;
+        if (!is_array($content)) {
+            throw new RuntimeException('Conteúdo inválido.');
+        }
+        $allowedTop = ['site_name', 'meta_description', 'visible_plan_codes', 'show_admin_plan_card', 'featured_plan_code', 'plan_blurbs', 'index'];
+        $patch = [];
+        foreach ($allowedTop as $k) {
+            if (array_key_exists($k, $content)) {
+                $patch[$k] = $content[$k];
+            }
+        }
+        if (isset($patch['visible_plan_codes']) && is_array($patch['visible_plan_codes'])) {
+            $patch['visible_plan_codes'] = array_values(array_filter(array_map('strval', $patch['visible_plan_codes'])));
+        }
+        if (!empty($patch)) {
+            extractor_branding_save($patch);
+        }
+        if (isset($_FILES['logo']) && is_array($_FILES['logo'])) {
+            extractor_branding_upload($_FILES['logo'], 'logo');
+        }
+        if (isset($_FILES['favicon']) && is_array($_FILES['favicon'])) {
+            extractor_branding_upload($_FILES['favicon'], 'favicon');
+        }
+        extractor_audit_log($pdo, $actorId, 'branding_save', 'site_content');
+        echo json_encode([
+            'ok' => true,
+            'logo_url' => extractor_branding_asset_url('logo'),
+            'favicon_url' => extractor_branding_asset_url('favicon'),
+        ]);
         exit;
     }
 

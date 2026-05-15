@@ -97,9 +97,35 @@ a:hover {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 800;
   font-size: 1.15rem;
   letter-spacing: -0.02em;
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand:not(:has(.brand-logo)) {
+  background: linear-gradient(110deg, #fff, var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-logo {
+  max-height: 2.25rem;
+  width: auto;
+  display: block;
+}
+
+.brand-logo-sidebar {
+  max-height: 1.85rem;
+}
+
+.brand-text {
+  font-weight: 800;
   background: linear-gradient(110deg, #fff, var(--accent));
   -webkit-background-clip: text;
   background-clip: text;

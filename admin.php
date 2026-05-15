@@ -41,13 +41,14 @@ header('Content-Type: text/html; charset=utf-8');
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Administração — Extrator PHP</title>
+  <title>Administração — <?= h(extractor_site_name()) ?></title>
+  <?= extractor_favicon_link_tags() ?>
   <link rel="stylesheet" href="<?= h(extractor_url('static/admin.css')) ?>" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <aside>
-    <div class="brand">Admin</div>
+    <?= extractor_brand_html(['href' => extractor_url('index.php'), 'class' => 'brand', 'as_sidebar' => true]) ?>
     <p class="muted" style="font-size:0.78rem;margin:0 0 0.5rem;">
       <strong><?= h($meName !== '' ? $meName : 'Conta') ?></strong><br />
       <code style="color:#9ec0ff;"><?= h($meRole) ?></code>
@@ -64,6 +65,7 @@ header('Content-Type: text/html; charset=utf-8');
       <button type="button" data-sec="tickets">Tickets</button>
       <?php if ($isSuper): ?>
         <button type="button" data-sec="plans">Planos</button>
+        <button type="button" data-sec="appearance">Aparência</button>
         <button type="button" data-sec="audit">Auditoria</button>
         <button type="button" data-sec="cfg">Sistema</button>
       <?php endif; ?>
@@ -216,6 +218,87 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
     </section>
 
+    <section id="sec-appearance" class="sec">
+      <div class="card">
+        <p class="muted">Textos da página inicial, planos visíveis, logo e favicon (painel e admin usam a mesma marca).</p>
+        <form id="brandForm" class="brand-form">
+          <fieldset class="pay-fieldset">
+            <legend>Marca</legend>
+            <label>Nome do site</label>
+            <input type="text" id="brSiteName" />
+            <label>Descrição (meta)</label>
+            <input type="text" id="brMeta" />
+            <div class="brand-upload-row">
+              <div>
+                <label>Logo</label>
+                <input type="file" id="brLogo" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
+                <img id="brLogoPrev" class="brand-preview" alt="" hidden />
+              </div>
+              <div>
+                <label>Favicon</label>
+                <input type="file" id="brFavicon" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon" />
+                <img id="brFavPrev" class="brand-preview brand-preview-fav" alt="" hidden />
+              </div>
+            </div>
+          </fieldset>
+          <fieldset class="pay-fieldset">
+            <legend>Página inicial — hero</legend>
+            <label>Título da página</label>
+            <input type="text" id="brPageTitle" />
+            <label>Linha superior (eyebrow)</label>
+            <input type="text" id="brHeroEyebrow" />
+            <label>Título — antes do destaque</label>
+            <input type="text" id="brHeroBefore" />
+            <label>Palavra em destaque</label>
+            <input type="text" id="brHeroHighlight" />
+            <label>Título — depois do destaque</label>
+            <input type="text" id="brHeroAfter" />
+            <label>Texto principal</label>
+            <textarea id="brHeroLead" rows="2"></textarea>
+            <label>Botão principal / secundário</label>
+            <div class="brand-two-col">
+              <input type="text" id="brHeroCta1" placeholder="Começar agora" />
+              <input type="text" id="brHeroCta2" placeholder="Já tenho conta" />
+            </div>
+          </fieldset>
+          <fieldset class="pay-fieldset">
+            <legend>Como funciona (3 passos)</legend>
+            <label>Título secção</label>
+            <input type="text" id="brHowTitle" />
+            <label>Subtítulo</label>
+            <input type="text" id="brHowSub" />
+            <div id="brStepsBox"></div>
+          </fieldset>
+          <fieldset class="pay-fieldset">
+            <legend>Funcionalidades</legend>
+            <label>Título / subtítulo</label>
+            <input type="text" id="brFeatTitle" />
+            <input type="text" id="brFeatSub" style="margin-top:0.35rem;" />
+            <div id="brFeatBox"></div>
+          </fieldset>
+          <fieldset class="pay-fieldset">
+            <legend>Planos na landing</legend>
+            <label>Título / subtítulo</label>
+            <input type="text" id="brPlansTitle" />
+            <input type="text" id="brPlansSub" style="margin-top:0.35rem;" />
+            <p class="muted" style="font-size:0.82rem;margin:0.5rem 0 0.25rem;">Planos visíveis e texto curto:</p>
+            <div id="brPlansVis"></div>
+            <label>Plano em destaque (badge)</label>
+            <select id="brFeatured"></select>
+            <label class="chk-inline"><input type="checkbox" id="brShowAdmin" /> Mostrar cartão «Conta principal» (1.º registo)</label>
+          </fieldset>
+          <fieldset class="pay-fieldset">
+            <legend>Rodapé e CTA final</legend>
+            <input type="text" id="brCtaTitle" placeholder="CTA título" />
+            <input type="text" id="brCtaSub" placeholder="CTA subtítulo" style="margin-top:0.35rem;" />
+            <textarea id="brFooterLegal" rows="2" style="margin-top:0.35rem;"></textarea>
+          </fieldset>
+          <button type="submit" class="btn-primary">Guardar aparência</button>
+        </form>
+        <p class="muted" id="brandStatus" style="margin-top:0.5rem;"></p>
+      </div>
+    </section>
+
     <section id="sec-audit" class="sec">
       <div class="card">
         <table class="tbl" id="auditTbl">
@@ -331,6 +414,17 @@ header('Content-Type: text/html; charset=utf-8');
     const ADMIN_API_URL = <?= json_encode(extractor_url('admin_api.php'), JSON_THROW_ON_ERROR) ?>;
     const api = async (action, extra = {}) => {
       const r = await fetch(ADMIN_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, csrf: CSRF, ...extra }) });
+      const t = await r.text();
+      let j;
+      try { j = JSON.parse(t); } catch { throw new Error(t); }
+      if (!j.ok) throw new Error(j.error || 'erro');
+      return j;
+    };
+
+    const apiForm = async (action, formData) => {
+      formData.append('action', action);
+      formData.append('csrf', CSRF);
+      const r = await fetch(ADMIN_API_URL, { method: 'POST', body: formData });
       const t = await r.text();
       let j;
       try { j = JSON.parse(t); } catch { throw new Error(t); }
@@ -695,6 +789,171 @@ header('Content-Type: text/html; charset=utf-8');
       document.getElementById('cfgPre').textContent = JSON.stringify(j.config, null, 2);
     }
 
+    let brandPlans = [];
+
+    function setBrandPreview(imgEl, url) {
+      if (!imgEl) return;
+      if (url) {
+        imgEl.src = url;
+        imgEl.hidden = false;
+      } else {
+        imgEl.removeAttribute('src');
+        imgEl.hidden = true;
+      }
+    }
+
+    function renderBrandSteps(steps) {
+      const box = document.getElementById('brStepsBox');
+      if (!box) return;
+      box.innerHTML = '';
+      (steps || []).forEach((s, i) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'brand-mini-block';
+        wrap.innerHTML = '<label>Passo ' + (i + 1) + ' — título</label><input type="text" data-step-title="' + i + '" value="' + escapeHtml(s.title || '') + '" /><label>Texto</label><textarea rows="2" data-step-text="' + i + '">' + escapeHtml(s.text || '') + '</textarea>';
+        box.appendChild(wrap);
+      });
+    }
+
+    function renderBrandFeatures(feats) {
+      const box = document.getElementById('brFeatBox');
+      if (!box) return;
+      box.innerHTML = '';
+      (feats || []).forEach((f, i) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'brand-mini-block';
+        wrap.innerHTML = '<label>Item ' + (i + 1) + ' — título</label><input type="text" data-feat-title="' + i + '" value="' + escapeHtml(f.title || '') + '" /><label>Texto</label><textarea rows="2" data-feat-text="' + i + '">' + escapeHtml(f.text || '') + '</textarea>';
+        box.appendChild(wrap);
+      });
+    }
+
+    function renderBrandPlanChecks(plans, visible, blurbs) {
+      const box = document.getElementById('brPlansVis');
+      const sel = document.getElementById('brFeatured');
+      if (!box || !sel) return;
+      box.innerHTML = '';
+      sel.innerHTML = '';
+      brandPlans = plans || [];
+      for (const p of brandPlans) {
+        const code = p.code;
+        const checked = (visible || []).includes(code);
+        const row = document.createElement('div');
+        row.className = 'brand-plan-row';
+        row.innerHTML = '<label class="chk-inline"><input type="checkbox" data-plan-vis="' + escapeHtml(code) + '"' + (checked ? ' checked' : '') + ' /> <code>' + escapeHtml(code) + '</code> ' + escapeHtml(p.display_name || '') + '</label><input type="text" data-plan-blurb="' + escapeHtml(code) + '" placeholder="Texto curto" value="' + escapeHtml((blurbs && blurbs[code]) || '') + '" />';
+        box.appendChild(row);
+        const opt = document.createElement('option');
+        opt.value = code;
+        opt.textContent = (p.display_name || code);
+        sel.appendChild(opt);
+      }
+    }
+
+    async function loadBranding() {
+      if (!IS_SUPER) return;
+      const j = await api('admin_branding_get');
+      const b = j.branding || {};
+      const ix = b.index || {};
+      document.getElementById('brSiteName').value = b.site_name || '';
+      document.getElementById('brMeta').value = b.meta_description || '';
+      document.getElementById('brPageTitle').value = ix.page_title || '';
+      document.getElementById('brHeroEyebrow').value = ix.hero_eyebrow || '';
+      document.getElementById('brHeroBefore').value = ix.hero_title_before || '';
+      document.getElementById('brHeroHighlight').value = ix.hero_title_highlight || '';
+      document.getElementById('brHeroAfter').value = ix.hero_title_after || '';
+      document.getElementById('brHeroLead').value = ix.hero_lead || '';
+      document.getElementById('brHeroCta1').value = ix.hero_cta_primary || '';
+      document.getElementById('brHeroCta2').value = ix.hero_cta_secondary || '';
+      document.getElementById('brHowTitle').value = ix.how_title || '';
+      document.getElementById('brHowSub').value = ix.how_sub || '';
+      document.getElementById('brFeatTitle').value = ix.features_title || '';
+      document.getElementById('brFeatSub').value = ix.features_sub || '';
+      document.getElementById('brPlansTitle').value = ix.plans_title || '';
+      document.getElementById('brPlansSub').value = ix.plans_sub || '';
+      document.getElementById('brCtaTitle').value = ix.cta_title || '';
+      document.getElementById('brCtaSub').value = ix.cta_sub || '';
+      document.getElementById('brFooterLegal').value = ix.footer_legal || '';
+      document.getElementById('brShowAdmin').checked = !!b.show_admin_plan_card;
+      renderBrandSteps(ix.steps || []);
+      renderBrandFeatures(ix.features || []);
+      renderBrandPlanChecks(j.plans || [], b.visible_plan_codes || [], b.plan_blurbs || {});
+      document.getElementById('brFeatured').value = b.featured_plan_code || 'master';
+      setBrandPreview(document.getElementById('brLogoPrev'), j.logo_url);
+      setBrandPreview(document.getElementById('brFavPrev'), j.favicon_url);
+      const st = document.getElementById('brandStatus');
+      if (st) st.textContent = 'Conteúdo carregado.';
+    }
+
+    function collectBrandingContent() {
+      const steps = [];
+      document.querySelectorAll('#brStepsBox [data-step-title]').forEach(inp => {
+        const i = inp.getAttribute('data-step-title');
+        const txt = document.querySelector('#brStepsBox [data-step-text="' + i + '"]');
+        steps.push({ title: inp.value.trim(), text: txt ? txt.value.trim() : '' });
+      });
+      const features = [];
+      document.querySelectorAll('#brFeatBox [data-feat-title]').forEach(inp => {
+        const i = inp.getAttribute('data-feat-title');
+        const txt = document.querySelector('#brFeatBox [data-feat-text="' + i + '"]');
+        features.push({ title: inp.value.trim(), text: txt ? txt.value.trim() : '' });
+      });
+      const visible = [];
+      document.querySelectorAll('[data-plan-vis]').forEach(cb => {
+        if (cb.checked) visible.push(cb.getAttribute('data-plan-vis'));
+      });
+      const blurbs = {};
+      document.querySelectorAll('[data-plan-blurb]').forEach(inp => {
+        blurbs[inp.getAttribute('data-plan-blurb')] = inp.value.trim();
+      });
+      return {
+        site_name: document.getElementById('brSiteName').value.trim(),
+        meta_description: document.getElementById('brMeta').value.trim(),
+        visible_plan_codes: visible,
+        show_admin_plan_card: document.getElementById('brShowAdmin').checked,
+        featured_plan_code: document.getElementById('brFeatured').value,
+        plan_blurbs: blurbs,
+        index: {
+          page_title: document.getElementById('brPageTitle').value.trim(),
+          hero_eyebrow: document.getElementById('brHeroEyebrow').value.trim(),
+          hero_title_before: document.getElementById('brHeroBefore').value.trim(),
+          hero_title_highlight: document.getElementById('brHeroHighlight').value.trim(),
+          hero_title_after: document.getElementById('brHeroAfter').value.trim(),
+          hero_lead: document.getElementById('brHeroLead').value.trim(),
+          hero_cta_primary: document.getElementById('brHeroCta1').value.trim(),
+          hero_cta_secondary: document.getElementById('brHeroCta2').value.trim(),
+          how_title: document.getElementById('brHowTitle').value.trim(),
+          how_sub: document.getElementById('brHowSub').value.trim(),
+          features_title: document.getElementById('brFeatTitle').value.trim(),
+          features_sub: document.getElementById('brFeatSub').value.trim(),
+          plans_title: document.getElementById('brPlansTitle').value.trim(),
+          plans_sub: document.getElementById('brPlansSub').value.trim(),
+          cta_title: document.getElementById('brCtaTitle').value.trim(),
+          cta_sub: document.getElementById('brCtaSub').value.trim(),
+          footer_legal: document.getElementById('brFooterLegal').value.trim(),
+          steps,
+          features,
+        },
+      };
+    }
+
+    const brandForm = document.getElementById('brandForm');
+    if (brandForm) {
+      brandForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData();
+        fd.append('payload', JSON.stringify({ content: collectBrandingContent() }));
+        const logo = document.getElementById('brLogo').files[0];
+        const fav = document.getElementById('brFavicon').files[0];
+        if (logo) fd.append('logo', logo);
+        if (fav) fd.append('favicon', fav);
+        try {
+          const j = await apiForm('admin_branding_save', fd);
+          setBrandPreview(document.getElementById('brLogoPrev'), j.logo_url);
+          setBrandPreview(document.getElementById('brFavPrev'), j.favicon_url);
+          document.getElementById('brandStatus').textContent = 'Guardado. Recarregue a página inicial para ver alterações.';
+          msg('Aparência guardada.', true);
+        } catch (err) { msg(err.message, false); }
+      });
+    }
+
     function escapeHtml(t) {
       const d = document.createElement('div');
       d.textContent = t;
@@ -709,7 +968,7 @@ header('Content-Type: text/html; charset=utf-8');
       const id = 'sec-' + b.dataset.sec;
       const sec = document.getElementById(id);
       if (sec) sec.classList.add('active');
-      const map = { dash: 'Resumo', users: 'Utilizadores', tx: 'Transacções', reports: 'Relatórios', finance: 'Financeiro', payments: 'Pagamentos', tickets: 'Tickets', plans: 'Planos', audit: 'Auditoria', cfg: 'Sistema' };
+      const map = { dash: 'Resumo', users: 'Utilizadores', tx: 'Transacções', reports: 'Relatórios', finance: 'Financeiro', payments: 'Pagamentos', tickets: 'Tickets', plans: 'Planos', appearance: 'Aparência', audit: 'Auditoria', cfg: 'Sistema' };
       title.textContent = map[b.dataset.sec] || 'Admin';
       msg('', true);
       if (b.dataset.sec === 'users') loadUsers().catch(e => msg(e.message, false));
@@ -719,6 +978,7 @@ header('Content-Type: text/html; charset=utf-8');
       if (b.dataset.sec === 'finance') loadFinance().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'tickets') loadTkList().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'plans') loadPlans().catch(e => msg(e.message, false));
+      if (b.dataset.sec === 'appearance') loadBranding().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'audit') loadAudit().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'cfg') loadCfg().catch(e => msg(e.message, false));
     }));

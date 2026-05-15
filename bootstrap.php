@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 const EXTRACTOR_PHP_VERSION = '1.2.0';
 /** Altere quando publicar no servidor — confirme em /health.php */
-const EXTRACTOR_BUILD_ID = '2026-05-15-f85eebe';
+const EXTRACTOR_BUILD_ID = '2026-05-15-branding';
 
 define('EXTRACTOR_ROOT', __DIR__);
 define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
 
 if (is_file(__DIR__ . '/includes/format.php')) {
     require_once __DIR__ . '/includes/format.php';
+}
+if (is_file(__DIR__ . '/includes/branding.php')) {
+    require_once __DIR__ . '/includes/branding.php';
 }
 
 if (is_file(__DIR__ . '/includes/urls.php')) {
@@ -50,7 +53,7 @@ if (is_file(__DIR__ . '/includes/urls.php')) {
         }
         function extractor_prepare_runtime(): void
         {
-            foreach ([EXTRACTOR_DATA, EXTRACTOR_DATA . '/out', EXTRACTOR_DATA . '/sessions'] as $dir) {
+            foreach ([EXTRACTOR_DATA, EXTRACTOR_DATA . '/out', EXTRACTOR_DATA . '/sessions', EXTRACTOR_DATA . '/branding'] as $dir) {
                 if (!is_dir($dir)) {
                     @mkdir($dir, 0770, true);
                 }

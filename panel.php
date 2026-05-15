@@ -124,12 +124,16 @@ header('Content-Type: text/html; charset=utf-8');
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Extrator — hospedagem PHP</title>
+  <title><?= h(extractor_site_name()) ?> — painel</title>
+  <?= extractor_favicon_link_tags() ?>
   <style>
     :root { font-family: system-ui, sans-serif; line-height: 1.45; color:#e8e8ef; background:#0e0f14; }
     body { margin:0; display:flex; min-height:100vh; }
     aside { width:220px; background:#151824; border-right:1px solid #2c3140; padding:1rem 0.75rem; display:flex; flex-direction:column; }
-    .brand { font-weight:800; padding-bottom:0.75rem; border-bottom:1px solid #2c3140; }
+    .brand { font-weight:800; padding-bottom:0.75rem; border-bottom:1px solid #2c3140; display:flex; align-items:center; gap:0.5rem; text-decoration:none; color:inherit; }
+    .brand-logo { max-height:2rem; width:auto; display:block; }
+    .brand-logo-sidebar { max-height:1.75rem; }
+    .brand-text { font-weight:800; }
     nav { display:flex; flex-direction:column; gap:0.35rem; padding:1rem 0; flex:1; }
     nav button { text-align:left; padding:0.5rem 0.6rem; border-radius:8px; border:1px solid transparent; background:transparent; color:#c8d0e0; font-weight:600; cursor:pointer; margin:0; }
     nav button.active { background:#24304f; border-color:#3b6df6; color:#fff; }
@@ -159,7 +163,7 @@ header('Content-Type: text/html; charset=utf-8');
 </head>
 <body>
   <aside>
-    <div class="brand">Extrator PHP</div>
+    <?= extractor_brand_html(['href' => extractor_url('index.php'), 'class' => 'brand', 'as_sidebar' => true]) ?>
     <div class="muted" style="font-size:0.78rem;padding:0.35rem 0;border-bottom:1px solid #2c3140;">
       <div><strong><?= h($meName !== '' ? $meName : 'Conta') ?></strong></div>
       <div>Nível: <code style="color:#9ec0ff;"><?= h($meRole) ?></code></div>

@@ -50,6 +50,12 @@ $checks['payment_settings_module'] = [
     'detail' => is_file(__DIR__ . '/includes/payment_settings.php') ? 'Presente' : 'FALTA — git pull',
 ];
 
+$checks['branding_module'] = [
+    'ok' => is_file(__DIR__ . '/includes/branding.php'),
+    'label' => 'Aparência / CMS (branding.php)',
+    'detail' => is_file(__DIR__ . '/includes/branding.php') ? 'Presente — Admin → Aparência' : 'FALTA — git pull',
+];
+
 $checks['config'] = [
     'ok' => extractor_config_exists(),
     'label' => 'config.local.php',

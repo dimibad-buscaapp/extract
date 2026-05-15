@@ -26,17 +26,6 @@ if (isset($_GET['diag']) || isset($_GET['health'])) {
     exit;
 }
 
-/** Texto amigável por plano (sem jargão técnico). */
-function extractor_plan_blurb(string $code): string
-{
-    return match ($code) {
-        'user' => 'Ideal para quem usa sozinho e quer organizar downloads com simplicidade.',
-        'reseller' => 'Para quem revende acesso e gere vários clientes no mesmo painel.',
-        'master' => 'Mais créditos e capacidade para equipas ou operações maiores.',
-        default => 'Plano flexível para o seu dia a dia.',
-    };
-}
-
 if (isset($_GET['logout'])) {
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
@@ -98,11 +87,19 @@ $plans = [];
 $userCount = 0;
 try {
     $pdo = extractor_pdo();
-    $plans = extractor_plans_list($pdo);
+    $allPlans = extractor_plans_list($pdo);
+    $plans = extractor_visible_plans_for_landing($allPlans);
     $userCount = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
 } catch (Throwable) {
     $plans = [];
 }
+
+$b = extractor_branding();
+$ix = (array) ($b['index'] ?? []);
+$featured = (string) ($b['featured_plan_code'] ?? 'master');
+$showAdminCard = !empty($b['show_admin_plan_card']);
+$steps = (array) ($ix['steps'] ?? []);
+$features = (array) ($ix['features'] ?? []);
 
 header('Content-Type: text/html; charset=utf-8');
 $css = extractor_url('static/landing.css');
@@ -115,8 +112,9 @@ $home = extractor_url('index.php');
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Guarde sites, encontre ficheiros e descarregue tudo num painel simples, com créditos e suporte." />
-  <title>Extrator — O seu painel de conteúdos</title>
+  <meta name="description" content="<?= h((string) ($b['meta_description'] ?? '')) ?>" />
+  <title><?= h((string) ($ix['page_title'] ?? extractor_site_name())) ?></title>
+  <?= extractor_favicon_link_tags() ?>
   <link rel="stylesheet" href="<?= h($css) ?>" />
 </head>
 <body>
@@ -125,90 +123,80 @@ $home = extractor_url('index.php');
 
   <header class="nav-shell">
     <div class="nav-inner">
-      <a class="brand" href="<?= h($home) ?>">Extrator</a>
+      <?= extractor_brand_html(['href' => $home, 'class' => 'brand']) ?>
       <nav class="nav-links" aria-label="Principal">
-        <a class="btn btn-ghost" href="#como-funciona">Como funciona</a>
-        <a class="btn btn-ghost" href="#planos">Planos</a>
-        <a class="btn btn-ghost" href="<?= h($login) ?>">Entrar</a>
-        <a class="btn btn-primary" href="<?= h($reg) ?>">Criar conta grátis</a>
+        <a class="btn btn-ghost" href="#como-funciona"><?= h((string) ($ix['nav_how'] ?? 'Como funciona')) ?></a>
+        <a class="btn btn-ghost" href="#planos"><?= h((string) ($ix['nav_plans'] ?? 'Planos')) ?></a>
+        <a class="btn btn-ghost" href="<?= h($login) ?>"><?= h((string) ($ix['nav_login'] ?? 'Entrar')) ?></a>
+        <a class="btn btn-primary" href="<?= h($reg) ?>"><?= h((string) ($ix['nav_register'] ?? 'Criar conta')) ?></a>
       </nav>
     </div>
   </header>
 
   <section class="hero">
     <div>
-      <p class="eyebrow">Painel online · Acesso seguro</p>
-      <h1>Organize e <span class="gradient-text">descarregue</span> os seus conteúdos num só lugar</h1>
-      <p class="lead">Guarde os sites que usa, encontre links de ficheiros e mantenha uma biblioteca pessoal — sem complicação. Tudo num painel claro, com créditos e suporte quando precisar.</p>
+      <p class="eyebrow"><?= h((string) ($ix['hero_eyebrow'] ?? '')) ?></p>
+      <h1><?= h((string) ($ix['hero_title_before'] ?? '')) ?><span class="gradient-text"><?= h((string) ($ix['hero_title_highlight'] ?? '')) ?></span><?= h((string) ($ix['hero_title_after'] ?? '')) ?></h1>
+      <p class="lead"><?= h((string) ($ix['hero_lead'] ?? '')) ?></p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="<?= h($reg) ?>">Começar agora</a>
-        <a class="btn btn-ghost" href="<?= h($login) ?>">Já tenho conta</a>
+        <a class="btn btn-primary" href="<?= h($reg) ?>"><?= h((string) ($ix['hero_cta_primary'] ?? 'Começar agora')) ?></a>
+        <a class="btn btn-ghost" href="<?= h($login) ?>"><?= h((string) ($ix['hero_cta_secondary'] ?? 'Já tenho conta')) ?></a>
       </div>
-      <p class="trust-line"><?= $userCount < 1 ? 'Primeira conta neste servidor torna-se administrador principal.' : 'Escolha o plano que combina consigo no registo.' ?></p>
+      <p class="trust-line"><?= h($userCount < 1 ? (string) ($ix['hero_trust_empty'] ?? '') : (string) ($ix['hero_trust_users'] ?? '')) ?></p>
     </div>
     <div class="hero-visual">
       <div class="hero-visual-inner">
         <div class="pulse-ring" aria-hidden="true"></div>
-        <h2 style="margin:0;font-size:1.15rem;">Tudo num painel</h2>
-        <p style="margin:0.5rem 0 0;color:var(--muted);font-size:0.9rem;">Sites guardados · Lista de ficheiros · Descargas · Suporte</p>
+        <h2 style="margin:0;font-size:1.15rem;"><?= h((string) ($ix['hero_visual_title'] ?? '')) ?></h2>
+        <p style="margin:0.5rem 0 0;color:var(--muted);font-size:0.9rem;"><?= h((string) ($ix['hero_visual_text'] ?? '')) ?></p>
       </div>
     </div>
   </section>
 
   <section class="section" id="como-funciona">
-    <h2>Como funciona</h2>
-    <p class="sub">Três passos simples — pensado para quem quer resultado, não manual técnico.</p>
+    <h2><?= h((string) ($ix['how_title'] ?? 'Como funciona')) ?></h2>
+    <p class="sub"><?= h((string) ($ix['how_sub'] ?? '')) ?></p>
     <div class="steps">
+      <?php foreach ($steps as $i => $step):
+          if (!is_array($step)) {
+              continue;
+          }
+          ?>
       <article class="step-card">
-        <span class="step-num">1</span>
-        <h3>Crie a sua conta</h3>
-        <p>Registe-se com e-mail e escolha o plano. Entre no painel em segundos.</p>
+        <span class="step-num"><?= (int) $i + 1 ?></span>
+        <h3><?= h((string) ($step['title'] ?? '')) ?></h3>
+        <p><?= h((string) ($step['text'] ?? '')) ?></p>
       </article>
-      <article class="step-card">
-        <span class="step-num">2</span>
-        <h3>Guarde os seus sites</h3>
-        <p>Adicione as páginas de onde costuma obter conteúdos. O sistema ajuda a encontrar links úteis.</p>
-      </article>
-      <article class="step-card">
-        <span class="step-num">3</span>
-        <h3>Descarregue e organize</h3>
-        <p>Os ficheiros ficam na sua biblioteca. Pode voltar a descarregar quando quiser, dentro dos seus créditos.</p>
-      </article>
+      <?php endforeach; ?>
     </div>
   </section>
 
   <section class="section features-section">
-    <h2>O que pode fazer</h2>
-    <p class="sub">Ferramentas práticas para o dia a dia — sem precisar de instalar nada no computador.</p>
+    <h2><?= h((string) ($ix['features_title'] ?? '')) ?></h2>
+    <p class="sub"><?= h((string) ($ix['features_sub'] ?? '')) ?></p>
     <div class="features">
+      <?php foreach ($features as $feat):
+          if (!is_array($feat)) {
+              continue;
+          }
+          ?>
       <article class="feature-card">
-        <h3>Sites favoritos</h3>
-        <p>Guarde endereços e credenciais de forma segura no servidor.</p>
+        <h3><?= h((string) ($feat['title'] ?? '')) ?></h3>
+        <p><?= h((string) ($feat['text'] ?? '')) ?></p>
       </article>
-      <article class="feature-card">
-        <h3>Encontrar ficheiros</h3>
-        <p>Peça ao painel para listar PDFs, vídeos, ZIPs e outros links numa página.</p>
-      </article>
-      <article class="feature-card">
-        <h3>Biblioteca</h3>
-        <p>Histórico do que já descarregou, com acesso rápido de novo.</p>
-      </article>
-      <article class="feature-card">
-        <h3>PIX e planos</h3>
-        <p>Recarregue créditos conforme o plano (quando o pagamento estiver activo).</p>
-      </article>
+      <?php endforeach; ?>
     </div>
   </section>
 
   <section class="section" id="planos">
-    <h2>Escolha o seu plano</h2>
-    <p class="sub">Preços de referência — pode ajustar valores no seu negócio. Pagamento e créditos no painel após o registo.</p>
+    <h2><?= h((string) ($ix['plans_title'] ?? '')) ?></h2>
+    <p class="sub"><?= h((string) ($ix['plans_sub'] ?? '')) ?></p>
     <div class="plans">
       <?php foreach ($plans as $p):
           $code = (string) ($p['code'] ?? '');
           $planUrl = extractor_url('register.php') . '?plan=' . rawurlencode($code);
           ?>
-        <article class="plan<?= $code === 'master' ? ' featured' : '' ?>">
+        <article class="plan<?= $code === $featured ? ' featured' : '' ?>">
           <h3><?= h((string) ($p['display_name'] ?? '')) ?></h3>
           <p class="plan-blurb"><?= h(extractor_plan_blurb($code)) ?></p>
           <div class="price"><?= h(extractor_money((float) ($p['price_monthly'] ?? 0))) ?><small>/mês</small></div>
@@ -221,32 +209,34 @@ $home = extractor_url('index.php');
         </article>
       <?php endforeach; ?>
 
+      <?php if ($showAdminCard): ?>
       <article class="plan plan-admin">
         <div class="plan-badge">ADMIN</div>
-        <h3>Conta principal</h3>
-        <p class="plan-blurb">Reservada à primeira instalação neste servidor — gestão completa.</p>
-        <div class="price">Incluída</div>
+        <h3><?= h((string) ($ix['admin_plan_title'] ?? 'Conta principal')) ?></h3>
+        <p class="plan-blurb"><?= h((string) ($ix['admin_plan_blurb'] ?? '')) ?></p>
+        <div class="price"><?= h((string) ($ix['admin_plan_price'] ?? 'Incluída')) ?></div>
         <ul>
           <li>Créditos ilimitados na app</li>
           <li>Vê todos os utilizadores e ficheiros</li>
           <li>Área de administração</li>
         </ul>
-        <span class="btn btn-ghost plan-cta plan-cta-muted">Criada no 1.º registo</span>
+        <span class="btn btn-ghost plan-cta plan-cta-muted"><?= h((string) ($ix['admin_plan_cta'] ?? 'Criada no 1.º registo')) ?></span>
       </article>
+      <?php endif; ?>
     </div>
   </section>
 
   <section class="section cta-band">
-    <h2>Pronto para experimentar?</h2>
-    <p class="sub">Crie a conta em menos de um minuto e explore o painel.</p>
+    <h2><?= h((string) ($ix['cta_title'] ?? '')) ?></h2>
+    <p class="sub"><?= h((string) ($ix['cta_sub'] ?? '')) ?></p>
     <div class="hero-cta" style="justify-content:center;">
-      <a class="btn btn-primary" href="<?= h($reg) ?>">Criar conta</a>
-      <a class="btn btn-ghost" href="<?= h($login) ?>">Entrar</a>
+      <a class="btn btn-primary" href="<?= h($reg) ?>"><?= h((string) ($ix['hero_cta_primary'] ?? 'Criar conta')) ?></a>
+      <a class="btn btn-ghost" href="<?= h($login) ?>"><?= h((string) ($ix['hero_cta_secondary'] ?? 'Entrar')) ?></a>
     </div>
   </section>
 
   <footer class="site-footer">
-    <p>Use apenas conteúdos que lhe pertencem ou que tenha autorização para obter.</p>
+    <p><?= h((string) ($ix['footer_legal'] ?? '')) ?></p>
     <p style="margin-top:0.5rem;"><a href="<?= h($login) ?>">Entrar</a> · <a href="<?= h($reg) ?>">Criar conta</a> · <a href="<?= h(extractor_url('health.php')) ?>">Diagnóstico</a></p>
     <p style="margin-top:0.35rem;font-size:0.72rem;opacity:0.65;">Versão <?= h(EXTRACTOR_BUILD_ID) ?></p>
   </footer>

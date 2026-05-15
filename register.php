@@ -76,7 +76,8 @@ $css = extractor_url('static/landing.css');
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Criar conta — Extrator</title>
+  <title>Criar conta — <?= h(extractor_site_name()) ?></title>
+  <?= extractor_favicon_link_tags() ?>
   <link rel="stylesheet" href="<?= h($css) ?>" />
   <?php if ($recSite !== ''): ?>
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
@@ -85,7 +86,7 @@ $css = extractor_url('static/landing.css');
 <body class="page-auth">
   <div class="auth-bg" aria-hidden="true"></div>
   <header class="auth-nav">
-    <a class="brand" href="<?= h(extractor_url('index.php')) ?>">Extrator</a>
+    <?= extractor_brand_html(['href' => extractor_url('index.php'), 'class' => 'brand']) ?>
     <a class="link-ghost" href="<?= h(extractor_url('login.php')) ?>">Entrar</a>
   </header>
   <main class="auth-card-wrap auth-wide">

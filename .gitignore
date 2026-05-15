@@ -22,6 +22,9 @@ config.local.php
 !/data/sessions/.gitkeep
 
 /data/payment_settings.json
+/data/site_content.json
+/data/branding/*
+!/data/branding/.gitkeep
 
 # Ferramenta VPS (.NET publish local)
 tools/vps-install/bin/

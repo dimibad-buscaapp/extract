@@ -48,13 +48,14 @@ $css = extractor_url('static/landing.css');
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Entrar — Extrator</title>
+  <title>Entrar — <?= h(extractor_site_name()) ?></title>
+  <?= extractor_favicon_link_tags() ?>
   <link rel="stylesheet" href="<?= h($css) ?>" />
 </head>
 <body class="page-auth">
   <div class="auth-bg" aria-hidden="true"></div>
   <header class="auth-nav">
-    <a class="brand" href="<?= h(extractor_url('index.php')) ?>">Extrator</a>
+    <?= extractor_brand_html(['href' => extractor_url('index.php'), 'class' => 'brand']) ?>
     <a class="link-ghost" href="<?= h(extractor_url('register.php')) ?>">Criar conta</a>
   </header>
   <main class="auth-card-wrap">
