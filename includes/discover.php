@@ -63,7 +63,7 @@ function extractor_has_ext(string $url): bool
 /**
  * @return list<string>
  */
-function extractor_discover_links(string $pageUrl, string $cookieHeader, bool $sameOrigin): array
+function extractor_discover_links(string $pageUrl, string $cookieHeader): array
 {
     $headers = [];
     if ($cookieHeader !== '') {
@@ -82,7 +82,6 @@ function extractor_discover_links(string $pageUrl, string $cookieHeader, bool $s
     $dom = new DOMDocument();
     $dom->loadHTML('<?xml encoding="UTF-8">' . $html);
     libxml_clear_errors();
-    $baseHost = extractor_url_host($pageUrl);
     $out = [];
     foreach ($dom->getElementsByTagName('a') as $a) {
         $href = $a->getAttribute('href');
@@ -92,12 +91,6 @@ function extractor_discover_links(string $pageUrl, string $cookieHeader, bool $s
         }
         if (!preg_match('#^https?://#i', $abs)) {
             continue;
-        }
-        if ($sameOrigin) {
-            $h2 = extractor_url_host($abs);
-            if ($h2 === null || $baseHost === null || $h2 !== $baseHost) {
-                continue;
-            }
         }
         if (!extractor_has_ext($abs)) {
             continue;

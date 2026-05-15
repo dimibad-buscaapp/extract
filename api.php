@@ -77,7 +77,6 @@ try {
         $user = trim((string) ($input['username'] ?? ''));
         $pass = (string) ($input['password'] ?? '');
         $cookie = trim((string) ($input['cookie'] ?? ''));
-        $same = !empty($input['same_origin_only']);
         if ($name === '' || $base === '') {
             throw new RuntimeException('Nome e URL base são obrigatórios');
         }
@@ -118,7 +117,7 @@ try {
                 $user !== '' ? $user : null,
                 $pwEnc,
                 $ckEnc,
-                $same ? 1 : 0,
+                0,
                 $id,
             ]);
             echo json_encode(['ok' => true, 'id' => $id]);
@@ -146,7 +145,6 @@ try {
         $siteId = (int) ($input['site_id'] ?? 0);
         $page = trim((string) ($input['page_url'] ?? ''));
         $cookie = trim((string) ($input['cookie'] ?? ''));
-        $same = !empty($input['same_origin_only']);
         if ($siteId > 0) {
             $st = $pdo->prepare('SELECT * FROM sites WHERE id = ?');
             $st->execute([$siteId]);
@@ -162,7 +160,6 @@ try {
             if (!empty($s['cookie_enc'])) {
                 $cookie = extractor_decrypt((string) $s['cookie_enc']);
             }
-            $same = (int) ($s['same_origin_only'] ?? 1) === 1;
         }
         if ($page === '' || !filter_var($page, FILTER_VALIDATE_URL)) {
             throw new RuntimeException('URL da página inválida');
@@ -173,7 +170,7 @@ try {
             throw new RuntimeException('Créditos insuficientes para descoberta.');
         }
 
-        $urls = extractor_discover_links($page, $cookie, $same);
+        $urls = extractor_discover_links($page, $cookie);
         echo json_encode(['ok' => true, 'urls' => $urls, 'page' => $page, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
         exit;
     }

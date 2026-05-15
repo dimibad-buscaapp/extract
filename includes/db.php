@@ -84,7 +84,7 @@ function extractor_pdo(): PDO
             username TEXT,
             password_enc TEXT NOT NULL,
             cookie_enc TEXT,
-            same_origin_only INTEGER NOT NULL DEFAULT 1,
+            same_origin_only INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )'
     );
@@ -161,6 +161,8 @@ function extractor_pdo(): PDO
     if (!extractor_db_column_exists($pdo, 'files', 'user_id')) {
         $pdo->exec('ALTER TABLE files ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0');
     }
+
+    $pdo->exec('UPDATE sites SET same_origin_only = 0');
 
     $plans = [
         ['user', 'Utilizador', 'user', 100, 49.9, 0, 0],

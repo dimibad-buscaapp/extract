@@ -213,8 +213,8 @@ header('Content-Type: text/html; charset=utf-8');
 
     <section id="sec-sites" class="sec">
       <div class="card info-box" style="margin-bottom:0.75rem;padding:0.75rem 1rem;background:#151a28;border:1px solid #2c4058;border-radius:8px;">
-        <strong>Descoberta de links no mesmo site</strong>
-        <p class="muted" style="margin:0.35rem 0 0;font-size:0.85rem;">Ao editar um site, a opção <em>«Só listar links do mesmo site que a URL base»</em> faz com que a varredura ignore links de outros domínios (CDN, Facebook, Google, etc.) e mostre apenas ficheiros hospedados no mesmo endereço que a página inicial do curso.</p>
+        <strong>Descoberta em todos os domínios</strong>
+        <p class="muted" style="margin:0.35rem 0 0;font-size:0.85rem;">A varredura lista ficheiros em <strong>qualquer domínio</strong> encontrado na página (CDN, armazenamento externo, outro site do curso, etc.) — ideal para reunir materiais de vários endereços num só painel.</p>
       </div>
       <div class="card">
         <button type="button" class="primary" id="btnNewSite">Novo site</button>
@@ -362,8 +362,6 @@ header('Content-Type: text/html; charset=utf-8');
       <input id="spass" type="password" />
       <label>Cookie de sessão (opcional; DevTools → rede)</label>
       <input id="scook" placeholder="PHPSESSID=..." />
-      <label><input type="checkbox" id="ssame" checked /> Só listar links do mesmo site que a URL base</label>
-      <p class="muted" style="font-size:0.82rem;margin:0.25rem 0 0;">Ignora links externos (CDN, redes sociais, outros domínios) ao descobrir ficheiros na página.</p>
       <div class="dlg-actions">
         <button type="button" class="secondary" id="dlgCancel">Cancelar</button>
         <button type="button" class="primary" id="dlgSave">Guardar</button>
@@ -435,7 +433,6 @@ header('Content-Type: text/html; charset=utf-8');
       document.getElementById('sid').value = id || '';
       if (!id) {
         ['sname','sbase','scontent','suser','spass','scook'].forEach(k => document.getElementById(k).value='');
-        document.getElementById('ssame').checked = true;
       } else {
         const j = await api('sites_list');
         const s = j.sites.find(x => String(x.id) === String(id));
@@ -446,7 +443,6 @@ header('Content-Type: text/html; charset=utf-8');
         document.getElementById('suser').value = s.username || '';
         document.getElementById('spass').value = '';
         document.getElementById('scook').value = '';
-        document.getElementById('ssame').checked = !!Number(s.same_origin_only);
       }
       dlg.showModal();
     }
@@ -460,7 +456,6 @@ header('Content-Type: text/html; charset=utf-8');
         username: document.getElementById('suser').value.trim(),
         password: document.getElementById('spass').value,
         cookie: document.getElementById('scook').value.trim(),
-        same_origin_only: document.getElementById('ssame').checked,
       };
       if (id) body.id = id;
       try { await api('site_save', body); dlg.close(); loadSites(); } catch(e) { alert(e.message); }
