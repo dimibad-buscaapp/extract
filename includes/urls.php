@@ -49,7 +49,7 @@ function extractor_absolute_url(string $path): string
 
 function extractor_prepare_runtime(): void
 {
-    foreach ([EXTRACTOR_DATA, EXTRACTOR_DATA . '/out', EXTRACTOR_DATA . '/sessions', EXTRACTOR_DATA . '/branding'] as $dir) {
+    foreach ([EXTRACTOR_DATA, EXTRACTOR_DATA . '/out', EXTRACTOR_DATA . '/sessions', EXTRACTOR_DATA . '/branding', EXTRACTOR_DATA . '/m3u_jobs'] as $dir) {
         if (!is_dir($dir)) {
             @mkdir($dir, 0770, true);
         }

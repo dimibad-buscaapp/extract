@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/crypto.php';
 require_once __DIR__ . '/includes/discover.php';
 require_once __DIR__ . '/includes/users.php';
 require_once __DIR__ . '/includes/m3u.php';
+require_once __DIR__ . '/includes/m3u_export_job.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -286,6 +287,36 @@ try {
             'counts' => $counts,
             'filter' => $filter,
         ]);
+        exit;
+    }
+
+    if ($action === 'm3u_export_begin') {
+        $id = (int) ($input['id'] ?? 0);
+        $mode = (string) ($input['mode'] ?? 'all_open');
+        if (!in_array($mode, ['all_open', 'convert'], true)) {
+            throw new RuntimeException('Modo inválido.');
+        }
+        $resolved = extractor_m3u_resolve_path($pdo, $id, $uid, $super);
+        if ($resolved === null) {
+            throw new RuntimeException('Lista não encontrada.');
+        }
+        $begin = extractor_m3u_job_begin($uid, $id, $mode, $resolved['path']);
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $begin['job_id'],
+            'total' => $begin['total'],
+            'message' => 'Exportação iniciada',
+        ]);
+        exit;
+    }
+
+    if ($action === 'm3u_export_step') {
+        $jobId = (string) ($input['job_id'] ?? '');
+        if ($jobId === '') {
+            throw new RuntimeException('job_id em falta.');
+        }
+        $status = extractor_m3u_job_step($jobId, $uid, $pdo);
+        echo json_encode($status);
         exit;
     }
 

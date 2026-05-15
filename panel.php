@@ -423,6 +423,21 @@ header('Content-Type: text/html; charset=utf-8');
     </div>
   </dialog>
 
+  <dialog id="dlgM3uJob">
+    <div class="dlg-body" style="min-width:20rem;max-width:28rem;">
+      <h2 id="m3uJobTitle" style="margin-top:0;">A processar lista</h2>
+      <p class="muted" id="m3uJobMsg" style="font-size:0.85rem;margin:0.35rem 0 0.75rem;">A iniciar…</p>
+      <div class="progress" style="height:12px;margin-bottom:0.75rem;"><div class="bar" id="m3uJobBar" style="width:0%;"></div></div>
+      <p class="muted" id="m3uJobDetail" style="font-size:0.78rem;min-height:2.5rem;"></p>
+      <div id="m3uJobDone" style="display:none;">
+        <a class="btn btn-primary" id="m3uJobDownload" href="#" download style="display:inline-block;padding:0.5rem 1rem;border-radius:8px;background:#3b6df6;color:#fff;text-decoration:none;font-weight:600;">Descarregar nova M3U</a>
+      </div>
+      <div class="dlg-actions" style="margin-top:0.75rem;">
+        <button type="button" class="secondary" id="m3uJobClose" disabled>Fechar</button>
+      </div>
+    </div>
+  </dialog>
+
   <script>
     const CSRF = <?= json_encode($csrf, JSON_THROW_ON_ERROR) ?>;
     const M3U_HIGHLIGHT = <?= json_encode($m3uHighlight, JSON_THROW_ON_ERROR) ?>;
@@ -613,8 +628,8 @@ header('Content-Type: text/html; charset=utf-8');
         const dlUrl = DOWNLOAD_URL + '?m3u_id=' + encodeURIComponent(p.id);
         tr.innerHTML = '<td>' + escapeHtml(p.label || p.file_name) + '</td><td>' + fmtBytes(p.bytes) + '</td><td>' + (p.entry_count || 0) + '</td><td class="row-actions" style="white-space:nowrap;"><a href="' + dlUrl + '" title="Ficheiro original">M3U</a> <button type="button" data-cat="' + p.id + '">Catálogo</button> <button type="button" data-nova="' + p.id + '">Nova M3U</button> <button type="button" data-conv="' + p.id + '">Converter</button> <button type="button" class="danger" data-m3u-del="' + p.id + '">Apagar</button></td>';
         tr.querySelector('[data-cat]').addEventListener('click', () => openCatalog(Number(p.id), p.label || p.file_name));
-        tr.querySelector('[data-nova]').addEventListener('click', () => m3uExportQuick(Number(p.id), 'all_open'));
-        tr.querySelector('[data-conv]').addEventListener('click', () => m3uExportQuick(Number(p.id), 'convert'));
+        tr.querySelector('[data-nova]').addEventListener('click', () => runM3uExportJob(Number(p.id), 'all_open', 'Nova M3U'));
+        tr.querySelector('[data-conv]').addEventListener('click', () => runM3uExportJob(Number(p.id), 'convert', 'Converter (player)'));
         tr.querySelector('[data-m3u-del]').addEventListener('click', async () => {
           if (!confirm('Apagar esta lista?')) return;
           try {
@@ -632,7 +647,15 @@ header('Content-Type: text/html; charset=utf-8');
     document.getElementById('btnRefreshM3u').addEventListener('click', () => loadM3uList().catch(e => alert(e.message)));
 
     const dlgCatalog = document.getElementById('dlgCatalog');
+    const dlgM3uJob = document.getElementById('dlgM3uJob');
+    const m3uJobBar = document.getElementById('m3uJobBar');
+    const m3uJobMsg = document.getElementById('m3uJobMsg');
+    const m3uJobDetail = document.getElementById('m3uJobDetail');
+    const m3uJobDone = document.getElementById('m3uJobDone');
+    const m3uJobDownload = document.getElementById('m3uJobDownload');
+    const m3uJobClose = document.getElementById('m3uJobClose');
     document.getElementById('m3uDlgClose').addEventListener('click', () => dlgCatalog.close());
+    m3uJobClose.addEventListener('click', () => dlgM3uJob.close());
 
     function renderCatalogTable() {
       const q = (catSearchEl && catSearchEl.value || '').trim().toLowerCase();
@@ -679,17 +702,41 @@ header('Content-Type: text/html; charset=utf-8');
       return j;
     }
 
-    async function m3uExportQuick(id, mode) {
-      const st = document.getElementById('m3uDlgStatus');
-      if (st) st.textContent = mode === 'convert' ? 'A converter catálogo…' : 'A gerar Nova M3U…';
+    async function runM3uExportJob(playlistId, mode, titleLabel) {
+      document.getElementById('m3uJobTitle').textContent = titleLabel || 'Exportar';
+      m3uJobMsg.textContent = 'A iniciar…';
+      m3uJobDetail.textContent = '';
+      m3uJobBar.style.width = '0%';
+      m3uJobDone.style.display = 'none';
+      m3uJobClose.disabled = true;
+      dlgM3uJob.showModal();
       try {
-        const j = await api('m3u_export', { id, mode });
-        window.open(j.download_url, '_blank');
-        if (st) st.textContent = 'Pronto: ' + j.entries + ' itens.';
+        const begin = await api('m3u_export_begin', { id: playlistId, mode });
+        const jobId = begin.job_id;
+        m3uJobMsg.textContent = begin.message || 'A processar…';
+        let last;
+        for (;;) {
+          last = await api('m3u_export_step', { job_id: jobId });
+          m3uJobBar.style.width = Math.min(100, last.percent || 0) + '%';
+          m3uJobMsg.textContent = last.message || '';
+          const stats = last.stats || {};
+          m3uJobDetail.textContent = 'Processados ' + (last.processed || 0) + ' / ' + (last.total || '?') +
+            ' · escritos ' + (last.written || 0) +
+            (last.skipped ? ' · dupes ' + last.skipped : '') +
+            (mode === 'convert' ? (' · filmes ' + (stats.movie || 0) + ' · séries ' + (stats.series || 0) + ' · canais ' + (stats.live || 0)) : '');
+          if (last.done) break;
+          await new Promise(r => setTimeout(r, 120));
+        }
+        if (last.download_url) {
+          m3uJobDownload.href = last.download_url;
+          m3uJobDownload.textContent = mode === 'convert' ? 'Descarregar M3U (player)' : 'Descarregar nova M3U';
+          m3uJobDone.style.display = 'block';
+        }
+        m3uJobClose.disabled = false;
         await loadM3uList();
       } catch (e) {
-        if (st) st.textContent = e.message;
-        else alert(e.message);
+        m3uJobMsg.textContent = 'Erro: ' + e.message;
+        m3uJobClose.disabled = false;
       }
     }
 
