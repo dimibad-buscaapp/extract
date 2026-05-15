@@ -266,7 +266,7 @@ try {
     if ($action === 'm3u_entries') {
         $id = (int) ($input['id'] ?? 0);
         $offset = max(0, (int) ($input['offset'] ?? 0));
-        $limit = min(200, max(1, (int) ($input['limit'] ?? 50)));
+        $limit = min(500, max(1, (int) ($input['limit'] ?? 100)));
         $filter = (string) ($input['filter'] ?? 'all');
         if (!in_array($filter, ['all', 'vod', 'live'], true)) {
             $filter = 'all';
@@ -316,6 +316,10 @@ try {
                 }
             }, 'vod');
             $exportEntries = extractor_m3u_map_local_files($pdo, $uid, $all);
+        } elseif ($mode === 'all_open' || $mode === 'convert') {
+            extractor_m3u_foreach($resolved['path'], static function (array $e) use (&$exportEntries): void {
+                $exportEntries[] = $e;
+            }, 'all');
         } else {
             extractor_m3u_foreach($resolved['path'], static function (array $e) use (&$exportEntries): void {
                 if ($e['kind'] === 'vod') {
@@ -326,10 +330,17 @@ try {
         if ($exportEntries === []) {
             throw new RuntimeException('Nenhum item para exportar. Para lista local, descarregue os VOD primeiro.');
         }
-        $body = extractor_m3u_format_playlist($exportEntries);
+        $body = $mode === 'convert'
+            ? extractor_m3u_format_playlist_catalog($exportEntries)
+            : extractor_m3u_format_playlist(array_map(static fn (array $e): array => [
+                'title' => $e['title'],
+                'url' => $e['url'],
+            ], $exportEntries));
         $outPath = EXTRACTOR_DATA . '/export_' . date('Ymd_His') . '.m3u';
         file_put_contents($outPath, $body);
         $label = match ($mode) {
+            'convert' => 'Catálogo ' . date('d/m H:i'),
+            'all_open' => 'Nova M3U ' . date('d/m H:i'),
             'local', 'selected_local' => 'M3U local ' . date('d/m H:i'),
             default => 'M3U VOD ' . date('d/m H:i'),
         };

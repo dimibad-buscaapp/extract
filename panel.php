@@ -260,10 +260,10 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
       <div class="card">
         <h2 style="margin-top:0;">Listas guardadas</h2>
-        <p class="muted" style="margin:0 0 0.5rem;">Listas M3U (não em Sites). Descarregue VOD para arquivo, exporte M3U VOD (URLs) ou M3U local (ficheiros no servidor) para outro IPTV.</p>
+        <p class="muted" style="margin:0 0 0.5rem;"><strong>M3U</strong> = original · <strong>Catálogo</strong> = todo o conteúdo · <strong>Nova M3U</strong> = lista aberta sem filtro · <strong>Converter</strong> = formato player (grupos)</p>
         <button type="button" class="secondary" id="btnRefreshM3u">Actualizar</button>
         <table class="tbl" id="m3uTbl" style="margin-top:0.5rem;">
-          <thead><tr><th>Nome</th><th>Tamanho</th><th>Canais</th><th>Acções</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Tamanho</th><th>Itens</th><th>Acções</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -393,30 +393,29 @@ header('Content-Type: text/html; charset=utf-8');
     </div>
   </dialog>
 
-  <dialog id="dlgM3u">
-    <div class="dlg-body">
-      <h2 id="m3uDlgTitle" style="margin-top:0;">Canais / VOD</h2>
-      <p class="muted" id="m3uDlgMeta" style="font-size:0.82rem;"></p>
-      <label style="font-size:0.85rem;">Filtrar</label>
-      <select id="m3uFilter" style="max-width:12rem;margin-bottom:0.5rem;">
-        <option value="all">Todos</option>
-        <option value="vod" selected>Só VOD</option>
-        <option value="live">Só ao vivo</option>
-      </select>
-      <div style="max-height:12rem;overflow:auto;border:1px solid #2c3140;border-radius:6px;padding:0.35rem;">
-        <table class="tbl" id="m3uEntriesTbl" style="margin:0;">
-          <thead><tr><th></th><th>Tipo</th><th>Nome</th><th>URL</th></tr></thead>
+  <dialog id="dlgCatalog">
+    <div class="dlg-body" style="max-width:42rem;width:calc(100% - 2rem);">
+      <h2 id="catDlgTitle" style="margin-top:0;">Catálogo</h2>
+      <p class="muted" id="catDlgMeta" style="font-size:0.82rem;"></p>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+        <select id="m3uFilter" style="max-width:10rem;">
+          <option value="all" selected>Todos</option>
+          <option value="vod">Só VOD</option>
+          <option value="live">Só ao vivo</option>
+        </select>
+        <input type="search" id="catSearch" placeholder="Pesquisar nome ou grupo…" style="flex:1;min-width:10rem;" />
+      </div>
+      <div style="max-height:18rem;overflow:auto;border:1px solid #2c3140;border-radius:6px;">
+        <table class="tbl" id="m3uEntriesTbl" style="margin:0;font-size:0.82rem;">
+          <thead><tr><th></th><th>Grupo</th><th>Tipo</th><th>Nome</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
-        <button type="button" class="secondary" id="m3uPrev">Anterior</button>
-        <button type="button" class="secondary" id="m3uNext">Seguinte</button>
-        <button type="button" class="primary" id="m3uDlVod">Baixar VOD → arquivo</button>
-        <button type="button" class="secondary" id="m3uExportVod">Exportar M3U VOD</button>
-        <button type="button" class="secondary" id="m3uExportLocal">Exportar M3U local</button>
+        <button type="button" class="secondary" id="catLoadMore">Carregar mais</button>
+        <button type="button" class="secondary" id="catLoadAll">Carregar todo o catálogo</button>
+        <button type="button" class="primary" id="m3uDlVod">Baixar VOD seleccionados</button>
       </div>
-      <p class="muted" id="m3uDlgHint" style="font-size:0.78rem;margin:0.35rem 0 0;">M3U VOD = URLs para outro IPTV. M3U local = ficheiros descarregados com link público.</p>
       <p class="muted" id="m3uDlgStatus" style="font-size:0.82rem;margin:0.5rem 0 0;"></p>
       <div class="dlg-actions">
         <button type="button" class="secondary" id="m3uDlgClose">Fechar</button>
@@ -585,9 +584,12 @@ header('Content-Type: text/html; charset=utf-8');
 
     let m3uDlgId = 0;
     let m3uDlgOffset = 0;
+    let m3uDlgTotal = 0;
     let m3uDlgCounts = { vod: 0, live: 0, total: 0 };
-    const m3uPageSize = 50;
+    let m3uCatalogRows = [];
+    const m3uPageSize = 200;
     const m3uFilterEl = document.getElementById('m3uFilter');
+    const catSearchEl = document.getElementById('catSearch');
 
     function m3uSelectedUrls(vodOnly) {
       const urls = [];
@@ -609,8 +611,10 @@ header('Content-Type: text/html; charset=utf-8');
           tr.style.background = 'rgba(59,109,246,0.15)';
         }
         const dlUrl = DOWNLOAD_URL + '?m3u_id=' + encodeURIComponent(p.id);
-        tr.innerHTML = '<td>' + escapeHtml(p.label || p.file_name) + '</td><td>' + fmtBytes(p.bytes) + '</td><td>' + (p.entry_count || 0) + '</td><td class="row-actions"><a href="' + dlUrl + '">M3U</a> <button type="button" data-m3u-view="' + p.id + '">Canais</button> <button type="button" class="danger" data-m3u-del="' + p.id + '">Apagar</button></td>';
-        tr.querySelector('[data-m3u-view]').addEventListener('click', () => openM3uDlg(Number(p.id), p.label || p.file_name, Number(p.entry_count || 0)));
+        tr.innerHTML = '<td>' + escapeHtml(p.label || p.file_name) + '</td><td>' + fmtBytes(p.bytes) + '</td><td>' + (p.entry_count || 0) + '</td><td class="row-actions" style="white-space:nowrap;"><a href="' + dlUrl + '" title="Ficheiro original">M3U</a> <button type="button" data-cat="' + p.id + '">Catálogo</button> <button type="button" data-nova="' + p.id + '">Nova M3U</button> <button type="button" data-conv="' + p.id + '">Converter</button> <button type="button" class="danger" data-m3u-del="' + p.id + '">Apagar</button></td>';
+        tr.querySelector('[data-cat]').addEventListener('click', () => openCatalog(Number(p.id), p.label || p.file_name));
+        tr.querySelector('[data-nova]').addEventListener('click', () => m3uExportQuick(Number(p.id), 'all_open'));
+        tr.querySelector('[data-conv]').addEventListener('click', () => m3uExportQuick(Number(p.id), 'convert'));
         tr.querySelector('[data-m3u-del]').addEventListener('click', async () => {
           if (!confirm('Apagar esta lista?')) return;
           try {
@@ -627,94 +631,129 @@ header('Content-Type: text/html; charset=utf-8');
 
     document.getElementById('btnRefreshM3u').addEventListener('click', () => loadM3uList().catch(e => alert(e.message)));
 
-    const dlgM3u = document.getElementById('dlgM3u');
-    document.getElementById('m3uDlgClose').addEventListener('click', () => dlgM3u.close());
+    const dlgCatalog = document.getElementById('dlgCatalog');
+    document.getElementById('m3uDlgClose').addEventListener('click', () => dlgCatalog.close());
 
-    async function loadM3uEntriesPage() {
-      const filter = m3uFilterEl ? m3uFilterEl.value : 'vod';
-      const j = await api('m3u_entries', { id: m3uDlgId, offset: m3uDlgOffset, limit: m3uPageSize, filter });
-      if (j.counts) m3uDlgCounts = j.counts;
+    function renderCatalogTable() {
+      const q = (catSearchEl && catSearchEl.value || '').trim().toLowerCase();
       const tb = document.querySelector('#m3uEntriesTbl tbody');
+      if (!tb) return;
       tb.innerHTML = '';
-      for (const e of j.entries || []) {
+      const rows = q ? m3uCatalogRows.filter(e =>
+        (e.title || '').toLowerCase().includes(q) ||
+        (e.group || '').toLowerCase().includes(q) ||
+        (e.url || '').toLowerCase().includes(q)
+      ) : m3uCatalogRows;
+      for (const e of rows) {
         const tr = document.createElement('tr');
-        const short = e.url.length > 40 ? e.url.slice(0, 37) + '…' : e.url;
         tr.innerHTML = '<td><input type="checkbox" class="m3u-ch" /></td><td></td><td></td><td></td>';
-        tr.cells[1].textContent = e.kind === 'vod' ? 'VOD' : 'Live';
-        tr.cells[2].textContent = e.title || '';
-        tr.cells[3].textContent = short;
-        tr.cells[3].title = e.url;
+        tr.cells[1].textContent = e.group || '—';
+        tr.cells[2].textContent = e.kind === 'vod' ? 'VOD' : 'Live';
+        tr.cells[3].textContent = e.title || '';
+        tr.cells[3].title = e.url || '';
         const cb = tr.querySelector('.m3u-ch');
         cb.dataset.url = e.url;
         cb.dataset.kind = e.kind || 'live';
-        if (e.kind === 'vod') cb.checked = true;
         tb.appendChild(tr);
       }
-      const total = Number(j.total || 0);
       const c = m3uDlgCounts;
-      document.getElementById('m3uDlgMeta').textContent = 'A mostrar ' + (m3uDlgOffset + 1) + '–' + Math.min(m3uDlgOffset + m3uPageSize, total) + ' de ' + total + ' (' + (c.vod || 0) + ' VOD, ' + (c.live || 0) + ' ao vivo).';
-      document.getElementById('m3uPrev').disabled = m3uDlgOffset <= 0;
-      document.getElementById('m3uNext').disabled = m3uDlgOffset + m3uPageSize >= total;
+      const shown = rows.length;
+      const loaded = m3uCatalogRows.length;
+      document.getElementById('catDlgMeta').textContent =
+        'Em memória: ' + loaded + ' de ' + m3uDlgTotal + ' (' + (c.vod || 0) + ' VOD, ' + (c.live || 0) + ' ao vivo)' +
+        (q ? ' · filtro: ' + shown + ' visíveis' : '');
+    }
+
+    async function fetchCatalogChunk(append) {
+      const filter = m3uFilterEl ? m3uFilterEl.value : 'all';
+      const j = await api('m3u_entries', { id: m3uDlgId, offset: m3uDlgOffset, limit: m3uPageSize, filter });
+      if (j.counts) m3uDlgCounts = j.counts;
+      m3uDlgTotal = Number(j.total || 0);
+      if (append) {
+        m3uCatalogRows = m3uCatalogRows.concat(j.entries || []);
+      } else {
+        m3uCatalogRows = j.entries || [];
+      }
+      m3uDlgOffset = m3uCatalogRows.length;
+      renderCatalogTable();
+      return j;
+    }
+
+    async function m3uExportQuick(id, mode) {
+      const st = document.getElementById('m3uDlgStatus');
+      if (st) st.textContent = mode === 'convert' ? 'A converter catálogo…' : 'A gerar Nova M3U…';
+      try {
+        const j = await api('m3u_export', { id, mode });
+        window.open(j.download_url, '_blank');
+        if (st) st.textContent = 'Pronto: ' + j.entries + ' itens.';
+        await loadM3uList();
+      } catch (e) {
+        if (st) st.textContent = e.message;
+        else alert(e.message);
+      }
+    }
+
+    function openCatalog(id, label) {
+      m3uDlgId = id;
+      m3uDlgOffset = 0;
+      m3uCatalogRows = [];
+      document.getElementById('catDlgTitle').textContent = label || 'Catálogo';
+      document.getElementById('m3uDlgStatus').textContent = 'A carregar…';
+      if (catSearchEl) catSearchEl.value = '';
+      if (m3uFilterEl) m3uFilterEl.value = 'all';
+      dlgCatalog.showModal();
+      fetchCatalogChunk(false).then(() => {
+        document.getElementById('m3uDlgStatus').textContent = '';
+      }).catch(e => {
+        document.getElementById('m3uDlgStatus').textContent = e.message;
+      });
     }
 
     if (m3uFilterEl) {
       m3uFilterEl.addEventListener('change', () => {
         m3uDlgOffset = 0;
-        loadM3uEntriesPage().catch(e => alert(e.message));
+        m3uCatalogRows = [];
+        fetchCatalogChunk(false).catch(e => alert(e.message));
       });
     }
-
-    function openM3uDlg(id, label, total) {
-      m3uDlgId = id;
-      m3uDlgOffset = 0;
-      document.getElementById('m3uDlgTitle').textContent = label || 'Lista';
-      document.getElementById('m3uDlgStatus').textContent = '';
-      loadM3uEntriesPage().catch(e => { document.getElementById('m3uDlgStatus').textContent = e.message; });
-      dlgM3u.showModal();
+    if (catSearchEl) {
+      catSearchEl.addEventListener('input', () => renderCatalogTable());
     }
 
-    document.getElementById('m3uPrev').addEventListener('click', () => {
-      m3uDlgOffset = Math.max(0, m3uDlgOffset - m3uPageSize);
-      loadM3uEntriesPage().catch(e => alert(e.message));
+    document.getElementById('catLoadMore').addEventListener('click', () => {
+      if (m3uDlgOffset >= m3uDlgTotal) return;
+      document.getElementById('m3uDlgStatus').textContent = 'A carregar…';
+      fetchCatalogChunk(true).then(() => {
+        document.getElementById('m3uDlgStatus').textContent = '';
+      }).catch(e => {
+        document.getElementById('m3uDlgStatus').textContent = e.message;
+      });
     });
-    document.getElementById('m3uNext').addEventListener('click', () => {
-      m3uDlgOffset += m3uPageSize;
-      loadM3uEntriesPage().catch(e => alert(e.message));
+
+    document.getElementById('catLoadAll').addEventListener('click', async () => {
+      const st = document.getElementById('m3uDlgStatus');
+      st.textContent = 'A carregar catálogo completo…';
+      m3uDlgOffset = 0;
+      m3uCatalogRows = [];
+      try {
+        while (m3uDlgOffset < m3uDlgTotal) {
+          await fetchCatalogChunk(true);
+          st.textContent = 'Carregados ' + m3uCatalogRows.length + ' / ' + m3uDlgTotal + '…';
+          if ((m3uCatalogRows.length === 0 && m3uDlgTotal > 0) || m3uDlgOffset >= m3uDlgTotal) break;
+        }
+        st.textContent = 'Catálogo completo: ' + m3uCatalogRows.length + ' itens.';
+      } catch (e) { st.textContent = e.message; }
     });
 
     document.getElementById('m3uDlVod').addEventListener('click', async () => {
       const urls = m3uSelectedUrls(true);
-      if (!urls.length) { alert('Seleccione itens VOD (ou filtre Só VOD).'); return; }
+      if (!urls.length) { alert('Seleccione itens VOD no catálogo.'); return; }
       const st = document.getElementById('m3uDlgStatus');
-      st.textContent = 'A descarregar ' + urls.length + ' VOD…';
+      st.textContent = 'A descarregar ' + urls.length + ' VOD para arquivo…';
       try {
         const j = await api('m3u_vod_download', { urls });
         const ok = (j.results || []).filter(r => r.ok).length;
-        st.textContent = 'Arquivo: ' + ok + '/' + urls.length + ' guardados na Biblioteca. Pode exportar M3U local.';
-      } catch (e) { st.textContent = e.message; }
-    });
-
-    document.getElementById('m3uExportVod').addEventListener('click', async () => {
-      const st = document.getElementById('m3uDlgStatus');
-      const urls = m3uSelectedUrls(false);
-      const body = { id: m3uDlgId, mode: urls.length ? 'selected' : 'vod_urls' };
-      if (urls.length) body.urls = urls;
-      try {
-        const j = await api('m3u_export', body);
-        st.innerHTML = 'M3U VOD criada (' + j.entries + ' itens). <a href="' + j.download_url + '" target="_blank" rel="noopener">Descarregar</a> — use noutro servidor IPTV.';
-        await loadM3uList();
-      } catch (e) { st.textContent = e.message; }
-    });
-
-    document.getElementById('m3uExportLocal').addEventListener('click', async () => {
-      const st = document.getElementById('m3uDlgStatus');
-      const urls = m3uSelectedUrls(true);
-      const body = { id: m3uDlgId, mode: urls.length ? 'selected_local' : 'local' };
-      if (urls.length) body.urls = urls;
-      try {
-        const j = await api('m3u_export', body);
-        st.innerHTML = 'M3U local criada (' + j.entries + ' itens). <a href="' + j.download_url + '" target="_blank" rel="noopener">Descarregar</a>';
-        await loadM3uList();
+        st.textContent = 'Arquivo: ' + ok + '/' + urls.length + ' na Biblioteca.';
       } catch (e) { st.textContent = e.message; }
     });
 

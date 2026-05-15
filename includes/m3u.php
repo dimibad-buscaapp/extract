@@ -71,7 +71,29 @@ function extractor_m3u_resolve_path(PDO $pdo, int $playlistId, int $uid, bool $s
 }
 
 /**
- * @param callable(array{title: string, url: string, kind: string}): void $callback
+ * @return array{title: string, group: string, logo: string}
+ */
+function extractor_m3u_parse_extinf(string $line): array
+{
+    $title = 'Item';
+    $pos = strrpos($line, ',');
+    if ($pos !== false) {
+        $title = trim(substr($line, $pos + 1));
+    }
+    $group = 'Geral';
+    if (preg_match('/group-title="([^"]*)"/i', $line, $m)) {
+        $group = trim($m[1]) !== '' ? trim($m[1]) : 'Geral';
+    }
+    $logo = '';
+    if (preg_match('/tvg-logo="([^"]*)"/i', $line, $m)) {
+        $logo = trim($m[1]);
+    }
+
+    return ['title' => $title, 'group' => $group, 'logo' => $logo];
+}
+
+/**
+ * @param callable(array{title: string, url: string, kind: string, group: string, logo: string}): void $callback
  */
 function extractor_m3u_foreach(string $path, callable $callback, string $filter = 'all'): void
 {
@@ -82,16 +104,22 @@ function extractor_m3u_foreach(string $path, callable $callback, string $filter 
     if ($fh === false) {
         return;
     }
-    $pendingTitle = '';
+    $pendingGroup = '';
+    $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
     while (($line = fgets($fh)) !== false) {
         $line = trim($line);
         if ($line === '') {
             continue;
         }
+        if (str_starts_with($line, '#EXTGRP:')) {
+            $pendingGroup = trim(substr($line, 8));
+            continue;
+        }
         if (str_starts_with($line, '#EXTINF:')) {
-            $pos = strrpos($line, ',');
-            $pendingTitle = $pos !== false ? trim(substr($line, $pos + 1)) : 'Canal';
-
+            $pendingMeta = extractor_m3u_parse_extinf($line);
+            if ($pendingGroup !== '') {
+                $pendingMeta['group'] = $pendingGroup;
+            }
             continue;
         }
         if ($line[0] === '#') {
@@ -100,21 +128,23 @@ function extractor_m3u_foreach(string $path, callable $callback, string $filter 
         if (!preg_match('#^https?://#i', $line)) {
             continue;
         }
-        $kind = extractor_m3u_entry_kind($line, $pendingTitle);
+        $kind = extractor_m3u_entry_kind($line, $pendingMeta['title']);
         if ($filter === 'vod' && $kind !== 'vod') {
-            $pendingTitle = '';
+            $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
             continue;
         }
         if ($filter === 'live' && $kind !== 'live') {
-            $pendingTitle = '';
+            $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
             continue;
         }
         $callback([
-            'title' => $pendingTitle !== '' ? $pendingTitle : 'Item',
+            'title' => $pendingMeta['title'] !== '' ? $pendingMeta['title'] : 'Item',
             'url' => $line,
             'kind' => $kind,
+            'group' => $pendingMeta['group'],
+            'logo' => $pendingMeta['logo'],
         ]);
-        $pendingTitle = '';
+        $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
     }
     fclose($fh);
 }
@@ -182,6 +212,43 @@ function extractor_m3u_format_playlist(array $entries): string
         }
         $lines[] = '#EXTINF:-1,' . $title;
         $lines[] = $url;
+    }
+
+    return implode("\n", $lines) . "\n";
+}
+
+/**
+ * Lista normalizada para players IPTV (grupos + metadados).
+ *
+ * @param list<array{title: string, url: string, kind?: string, group?: string, logo?: string}> $entries
+ */
+function extractor_m3u_format_playlist_catalog(array $entries): string
+{
+    $byGroup = [];
+    foreach ($entries as $e) {
+        $g = trim((string) ($e['group'] ?? ''));
+        if ($g === '') {
+            $g = ($e['kind'] ?? '') === 'vod' ? 'VOD' : 'Ao vivo';
+        }
+        $byGroup[$g][] = $e;
+    }
+    ksort($byGroup, SORT_NATURAL | SORT_FLAG_CASE);
+    $lines = ['#EXTM3U'];
+    foreach ($byGroup as $group => $items) {
+        $lines[] = '#EXTGRP:' . str_replace(["\r", "\n"], ' ', $group);
+        foreach ($items as $e) {
+            $title = str_replace(["\r", "\n", ','], ' ', (string) ($e['title'] ?? 'Item'));
+            $title = trim($title) !== '' ? trim($title) : 'Item';
+            $url = trim((string) ($e['url'] ?? ''));
+            if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                continue;
+            }
+            $grp = str_replace('"', "'", $group);
+            $logo = trim((string) ($e['logo'] ?? ''));
+            $logoAttr = $logo !== '' ? ' tvg-logo="' . str_replace('"', "'", $logo) . '"' : '';
+            $lines[] = '#EXTINF:-1 group-title="' . $grp . '"' . $logoAttr . ',' . $title;
+            $lines[] = $url;
+        }
     }
 
     return implode("\n", $lines) . "\n";
