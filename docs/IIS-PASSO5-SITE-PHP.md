@@ -27,6 +27,57 @@ C:\PHP\php.exe -m
 
 Deve listar **PDO**, **pdo_sqlite**, **openssl**.
 
+### Se no `phpinfo` aparece **Loaded Configuration File (none)**
+
+O IIS está a usar o PHP **sem** `php.ini`. O ficheiro **`php.ini`** tem de existir **na mesma pasta que `php-cgi.exe`** (ex.: `C:\PHP\php.ini` se o executável for `C:\PHP\php-cgi.exe`).
+
+**PowerShell como Administrador** (ajusta `C:\PHP` se o teu PHP estiver doutro sítio):
+
+```powershell
+$p = "C:\PHP"
+if (-not (Test-Path "$p\php-cgi.exe")) { Write-Host "ERRO: nao existe $p\php-cgi.exe - corrija o caminho"; exit 1 }
+Copy-Item "$p\php.ini-production" "$p\php.ini" -Force
+Get-Item "$p\php.ini" | Select-Object FullName, Length, LastWriteTime
+```
+
+Confirma no Explorador que **não** existe `php.ini.txt` (o Notepad às vezes guarda assim). O nome tem de ser **`php.ini`** só.
+
+Teste na **linha de comandos** (deve mostrar **Loaded Configuration File** com caminho):
+
+```powershell
+& "$p\php.exe" --ini
+& "$p\php.exe" -m | Select-String -Pattern "pdo_sqlite|openssl"
+```
+
+Se **`pdo_sqlite`** não aparecer, edita **`C:\PHP\php.ini`**: descomenta as linhas `extension=openssl`, `extension=pdo_sqlite`, `extension=sqlite3`, `extension=curl`, `extension=mbstring`, `extension=fileinfo` e confirma `extension_dir` (ex.: `extension_dir="C:/PHP/ext"`). Define também:
+
+```ini
+cgi.force_redirect = 0
+```
+
+Grava, depois:
+
+```powershell
+iisreset
+```
+
+Recarrega `phpinfo.php` e verifica **Loaded Configuration File** = `C:\PHP\php.ini` e **PDO drivers** = **sqlite**.
+
+**Último recurso** — cria/reescreve `C:\PHP\php.ini` só com o mínimo (pastas com barras `/`):
+
+```ini
+extension_dir="C:/PHP/ext"
+extension=openssl
+extension=pdo_sqlite
+extension=sqlite3
+extension=curl
+extension=mbstring
+extension=fileinfo
+cgi.force_redirect=0
+```
+
+(Confirma que os ficheiros `php_pdo_sqlite.dll`, etc., existem em `C:\PHP\ext`.)
+
 ---
 
 ## 5.2 — Ligação PHP ao IIS (FastCGI)
