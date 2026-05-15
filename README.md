@@ -19,6 +19,12 @@ O painel público está previsto para **`https://ext.buscaapp.com/`** (SSL no se
 
 **Git + clone no VPS Windows:** ver [`docs/INSTALACAO-GIT-VPS.md`](docs/INSTALACAO-GIT-VPS.md) (pasta `C:\apps\Extrator`).
 
+**Instalador .exe (clone, `config.local.php`, permissões `data`):** [`tools/vps-install/README.md`](tools/vps-install/README.md) — compila com `tools/vps-install/build.cmd` (ou `build.ps1`) e copia `publish/ExtractorVpsSetup.exe` para o servidor.
+
+**IIS, DNS e domínio `ext.buscaapp.com`:** ver [`docs/CONFIGURAR-SITE-IIS-DNS.md`](docs/CONFIGURAR-SITE-IIS-DNS.md).
+
+**Domínio/DNS na Hostinger, ficheiros no teu VPS (cenário misto):** ver [`docs/DOMINIO-HOSTINGER-SITE-VPS.md`](docs/DOMINIO-HOSTINGER-SITE-VPS.md).
+
 ## Instalação na Hostinger
 
 1. Crie uma pasta em **`public_html`** ou aponte o subdomínio **`ext.buscaapp.com`** para a pasta onde enviar os ficheiros (pode ser a raiz do subdomínio).

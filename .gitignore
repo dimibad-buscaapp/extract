@@ -17,6 +17,11 @@ config.local.php
 /data/out/*
 !/data/out/.htaccess
 
+# Ferramenta VPS (.NET publish local)
+tools/vps-install/bin/
+tools/vps-install/obj/
+tools/vps-install/publish/
+
 # SO / IDE
 .DS_Store
 Thumbs.db

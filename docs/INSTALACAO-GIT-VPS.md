@@ -49,6 +49,8 @@ cd C:\apps\Extrator
 
 O site fica com a raiz do PHP em `C:\apps\Extrator` (onde estão `index.php`, `panel.php`, etc.).
 
+**Instalador opcional (.exe):** ver [`tools/vps-install/README.md`](../tools/vps-install/README.md) — `git clone` / `git pull`, `config.local.php` inicial e permissões em `data\` num único executável no Windows Server.
+
 ## 5. Configuração local no VPS (obrigatório)
 
 1. Copia o exemplo de configuração:

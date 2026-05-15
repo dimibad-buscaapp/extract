@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ExtractorVpsSetup</AssemblyName>
+    <RootNamespace>ExtractorVpsSetup</RootNamespace>
+    <Version>1.0.0</Version>
+    <Description>Clone/pull Git, criar config.local.php e permissões data\ no VPS Windows</Description>
+  </PropertyGroup>
+</Project>
