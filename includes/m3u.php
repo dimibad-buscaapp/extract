@@ -173,6 +173,103 @@ function extractor_m3u_count_entries(string $path): int
 }
 
 /**
+ * Estado de leitura incremental (byte_offset evita reler o ficheiro desde o início).
+ *
+ * @return array{byte_offset: int, pending_group: string, pending_meta: array{title: string, group: string, logo: string}}
+ */
+function extractor_m3u_read_state_default(): array
+{
+    return [
+        'byte_offset' => 0,
+        'pending_group' => '',
+        'pending_meta' => ['title' => 'Item', 'group' => 'Geral', 'logo' => ''],
+    ];
+}
+
+/**
+ * @param array{byte_offset: int, pending_group: string, pending_meta: array{title: string, group: string, logo: string}} $readState
+ * @return array{
+ *   entries: list<array{title: string, url: string, kind: string, group: string, logo: string}>,
+ *   read_state: array{byte_offset: int, pending_group: string, pending_meta: array{title: string, group: string, logo: string}},
+ *   eof: bool
+ * }
+ */
+function extractor_m3u_read_batch(string $path, array $readState, int $limit, string $filter = 'all'): array
+{
+    if (!is_file($path) || $limit < 1) {
+        return ['entries' => [], 'read_state' => $readState, 'eof' => true];
+    }
+    $fh = fopen($path, 'rb');
+    if ($fh === false) {
+        return ['entries' => [], 'read_state' => $readState, 'eof' => true];
+    }
+
+    $byteOffset = max(0, (int) ($readState['byte_offset'] ?? 0));
+    if ($byteOffset > 0) {
+        fseek($fh, $byteOffset);
+        fgets($fh);
+    }
+
+    $pendingGroup = (string) ($readState['pending_group'] ?? '');
+    $pendingMeta = (array) ($readState['pending_meta'] ?? ['title' => 'Item', 'group' => 'Geral', 'logo' => '']);
+    $out = [];
+
+    while (($line = fgets($fh)) !== false) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        if (str_starts_with($line, '#EXTGRP:')) {
+            $pendingGroup = trim(substr($line, 8));
+            continue;
+        }
+        if (str_starts_with($line, '#EXTINF:')) {
+            $pendingMeta = extractor_m3u_parse_extinf($line);
+            if ($pendingGroup !== '') {
+                $pendingMeta['group'] = $pendingGroup;
+            }
+            continue;
+        }
+        if ($line[0] === '#') {
+            continue;
+        }
+        if (!preg_match('#^https?://#i', $line)) {
+            continue;
+        }
+        $kind = extractor_m3u_entry_kind($line, $pendingMeta['title']);
+        if ($filter === 'vod' && $kind !== 'vod') {
+            $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
+            continue;
+        }
+        if ($filter === 'live' && $kind !== 'live') {
+            $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
+            continue;
+        }
+        $out[] = [
+            'title' => $pendingMeta['title'] !== '' ? $pendingMeta['title'] : 'Item',
+            'url' => $line,
+            'kind' => $kind,
+            'group' => $pendingMeta['group'],
+            'logo' => $pendingMeta['logo'],
+        ];
+        $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
+        if (count($out) >= $limit) {
+            break;
+        }
+    }
+
+    $eof = feof($fh);
+    $readState = [
+        'byte_offset' => (int) ftell($fh),
+        'pending_group' => $pendingGroup,
+        'pending_meta' => $pendingMeta,
+    ];
+    fclose($fh);
+
+    return ['entries' => $out, 'read_state' => $readState, 'eof' => $eof];
+}
+
+/**
  * @return list<array{title: string, url: string, kind: string}>
  */
 function extractor_m3u_list_entries(string $path, int $offset = 0, int $limit = 100, string $filter = 'all'): array
@@ -298,8 +395,14 @@ function extractor_m3u_map_local_files(PDO $pdo, int $userId, array $entries): a
     return $out;
 }
 
-function extractor_m3u_register_playlist(PDO $pdo, int $userId, string $absolutePath, string $label, ?string $sourceUrl = null): int
-{
+function extractor_m3u_register_playlist(
+    PDO $pdo,
+    int $userId,
+    string $absolutePath,
+    string $label,
+    ?string $sourceUrl = null,
+    ?int $entryCountOverride = null,
+): int {
     $real = realpath($absolutePath);
     if ($real === false || !is_file($real)) {
         throw new RuntimeException('Ficheiro M3U não encontrado.');
@@ -310,8 +413,12 @@ function extractor_m3u_register_playlist(PDO $pdo, int $userId, string $absolute
     }
     $fileName = basename($real);
     $bytes = (int) filesize($real);
-    $counts = extractor_m3u_count_kinds($real);
-    $count = $counts['total'];
+    if ($entryCountOverride !== null && $entryCountOverride > 0) {
+        $count = $entryCountOverride;
+    } else {
+        $counts = extractor_m3u_count_kinds($real);
+        $count = $counts['total'];
+    }
     $now = time();
 
     $st = $pdo->prepare('SELECT id FROM m3u_playlists WHERE file_name = ?');

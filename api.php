@@ -300,7 +300,11 @@ try {
         if ($resolved === null) {
             throw new RuntimeException('Lista não encontrada.');
         }
-        $begin = extractor_m3u_job_begin($uid, $id, $mode, $resolved['path']);
+        $stCount = $pdo->prepare('SELECT entry_count FROM m3u_playlists WHERE id = ?');
+        $stCount->execute([$id]);
+        $countRow = $stCount->fetch();
+        $totalHint = (int) ($countRow['entry_count'] ?? 0);
+        $begin = extractor_m3u_job_begin($uid, $id, $mode, $resolved['path'], $totalHint);
         echo json_encode([
             'ok' => true,
             'job_id' => $begin['job_id'],

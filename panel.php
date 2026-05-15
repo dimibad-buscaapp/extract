@@ -175,6 +175,15 @@ header('Content-Type: text/html; charset=utf-8');
     .err { color:#ff8a8a; }
     .tbl { width:100%; border-collapse:collapse; font-size:0.88rem; margin-top:0.5rem; }
     .tbl th, .tbl td { border-bottom:1px solid #2c3140; padding:0.4rem 0.3rem; text-align:left; vertical-align:top; word-break:break-all; }
+    .m3u-actions { display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center; }
+    .m3u-act { display:inline-flex; align-items:center; justify-content:center; gap:0.2rem; padding:0.34rem 0.62rem; border-radius:8px; font-size:0.76rem; font-weight:600; line-height:1.2; border:1px solid transparent; cursor:pointer; text-decoration:none; white-space:nowrap; transition:transform .12s ease, filter .12s ease, box-shadow .12s ease; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    .m3u-act:hover { filter:brightness(1.1); transform:translateY(-1px); }
+    .m3u-act:active { transform:translateY(0); filter:brightness(0.95); }
+    .m3u-act-dl { background:linear-gradient(145deg,#2d4a8a,#3b6df6); color:#fff; border-color:#5a84ff; }
+    .m3u-act-cat { background:linear-gradient(145deg,#1e2a42,#2a3d5c); color:#c5d8ff; border-color:#3d5278; }
+    .m3u-act-nova { background:linear-gradient(145deg,#1a3d34,#248f6a); color:#d4ffe8; border-color:#2fad7a; }
+    .m3u-act-conv { background:linear-gradient(145deg,#3d2e14,#8a6420); color:#ffecc8; border-color:#c49a3a; }
+    .m3u-act-del { background:linear-gradient(145deg,#4a1c1c,#9b3030); color:#ffd8d8; border-color:#c44; }
     .progress { height:10px; background:#0e0f14; border:1px solid #2c3140; border-radius:999px; overflow:hidden; margin-top:0.5rem; }
     .bar { height:100%; width:0%; background:linear-gradient(90deg,#3b6df6,#6a9cff); transition:width .25s; }
     dialog { border:1px solid #2c3140; border-radius:10px; background:#1a1c26; color:#e8e8ef; padding:0; max-width:32rem; width:calc(100% - 2rem); }
@@ -626,11 +635,32 @@ header('Content-Type: text/html; charset=utf-8');
           tr.style.background = 'rgba(59,109,246,0.15)';
         }
         const dlUrl = DOWNLOAD_URL + '?m3u_id=' + encodeURIComponent(p.id);
-        tr.innerHTML = '<td>' + escapeHtml(p.label || p.file_name) + '</td><td>' + fmtBytes(p.bytes) + '</td><td>' + (p.entry_count || 0) + '</td><td class="row-actions" style="white-space:nowrap;"><a href="' + dlUrl + '" title="Ficheiro original">M3U</a> <button type="button" data-cat="' + p.id + '">Catálogo</button> <button type="button" data-nova="' + p.id + '">Nova M3U</button> <button type="button" data-conv="' + p.id + '">Converter</button> <button type="button" class="danger" data-m3u-del="' + p.id + '">Apagar</button></td>';
-        tr.querySelector('[data-cat]').addEventListener('click', () => openCatalog(Number(p.id), p.label || p.file_name));
-        tr.querySelector('[data-nova]').addEventListener('click', () => runM3uExportJob(Number(p.id), 'all_open', 'Nova M3U'));
-        tr.querySelector('[data-conv]').addEventListener('click', () => runM3uExportJob(Number(p.id), 'convert', 'Converter (player)'));
-        tr.querySelector('[data-m3u-del]').addEventListener('click', async () => {
+        const name = escapeHtml(p.label || p.file_name);
+        tr.innerHTML = '<td>' + name + '</td><td>' + fmtBytes(p.bytes) + '</td><td>' + (p.entry_count || 0) + '</td><td class="m3u-actions"></td>';
+        const actions = tr.querySelector('.m3u-actions');
+        const mkBtn = (cls, label, attrs) => {
+          const el = document.createElement(attrs.tag || 'button');
+          el.type = 'button';
+          el.className = 'm3u-act ' + cls;
+          el.textContent = label;
+          Object.entries(attrs).forEach(([k, v]) => { if (k !== 'tag') el.setAttribute(k, v); });
+          return el;
+        };
+        const aDl = document.createElement('a');
+        aDl.href = dlUrl;
+        aDl.className = 'm3u-act m3u-act-dl';
+        aDl.title = 'Ficheiro original';
+        aDl.textContent = 'M3U';
+        actions.appendChild(aDl);
+        const bCat = mkBtn('m3u-act-cat', 'Catálogo', { 'data-cat': String(p.id) });
+        const bNova = mkBtn('m3u-act-nova', 'Nova M3U', { 'data-nova': String(p.id) });
+        const bConv = mkBtn('m3u-act-conv', 'Converter', { 'data-conv': String(p.id) });
+        const bDel = mkBtn('m3u-act-del', 'Apagar', { 'data-m3u-del': String(p.id) });
+        actions.append(bCat, bNova, bConv, bDel);
+        bCat.addEventListener('click', () => openCatalog(Number(p.id), p.label || p.file_name));
+        bNova.addEventListener('click', () => runM3uExportJob(Number(p.id), 'all_open', 'Nova M3U'));
+        bConv.addEventListener('click', () => runM3uExportJob(Number(p.id), 'convert', 'Converter (player)'));
+        bDel.addEventListener('click', async () => {
           if (!confirm('Apagar esta lista?')) return;
           try {
             await api('m3u_delete', { id: p.id });
@@ -725,7 +755,6 @@ header('Content-Type: text/html; charset=utf-8');
             (last.skipped ? ' · dupes ' + last.skipped : '') +
             (mode === 'convert' ? (' · filmes ' + (stats.movie || 0) + ' · séries ' + (stats.series || 0) + ' · canais ' + (stats.live || 0)) : '');
           if (last.done) break;
-          await new Promise(r => setTimeout(r, 120));
         }
         if (last.download_url) {
           m3uJobDownload.href = last.download_url;
