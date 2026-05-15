@@ -230,7 +230,8 @@ $home = extractor_url('index.php');
 
   <footer class="site-footer">
     <p>Use apenas conteúdos que lhe pertencem ou que tenha autorização para obter.</p>
-    <p style="margin-top:0.5rem;"><a href="<?= h($login) ?>">Entrar</a> · <a href="<?= h($reg) ?>">Criar conta</a></p>
+    <p style="margin-top:0.5rem;"><a href="<?= h($login) ?>">Entrar</a> · <a href="<?= h($reg) ?>">Criar conta</a> · <a href="<?= h(extractor_url('health.php')) ?>">Diagnóstico</a></p>
+    <p style="margin-top:0.35rem;font-size:0.72rem;opacity:0.65;">Versão <?= h(EXTRACTOR_BUILD_ID) ?></p>
   </footer>
 </body>
 </html>
