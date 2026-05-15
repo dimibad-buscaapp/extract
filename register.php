@@ -28,7 +28,12 @@ try {
     $plans = extractor_plans_list($pdo);
 } catch (Throwable $e) {
     error_log('[Extrator register] DB: ' . $e->getMessage());
-    $setupError = 'O servidor ainda não consegue gravar a base de dados. Peça ao administrador para dar permissão de escrita à pasta data (e data/sessions) no IIS.';
+    $msg = $e->getMessage();
+    if (str_contains($msg, 'could not find driver')) {
+        $setupError = 'O PHP no servidor não tem SQLite activo. No ficheiro php.ini (pasta do php-cgi.exe, ex. C:\\PHP\\php.ini), descomente extension=pdo_sqlite e extension=sqlite3, grave e execute iisreset. Confirme em diag.php que pdo_sqlite aparece como activo.';
+    } else {
+        $setupError = 'O servidor ainda não consegue usar a base de dados. Verifique permissões na pasta data (e data/sessions) no IIS ou abra diag.php no browser.';
+    }
 }
 
 $pref = preg_replace('/[^a-z0-9_]/i', '', (string) ($_GET['plan'] ?? ''));
