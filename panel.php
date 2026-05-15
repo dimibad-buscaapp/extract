@@ -7,15 +7,13 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/users.php';
 
 if (!extractor_logged_in()) {
-    header('Location: login.php');
-    exit;
+    extractor_redirect('login.php');
 }
 
 $pdo = extractor_pdo();
 extractor_user_refresh_session($pdo);
 if (!extractor_logged_in()) {
-    header('Location: login.php');
-    exit;
+    extractor_redirect('login.php');
 }
 $meCredits = (int) ($_SESSION['user_credits'] ?? 0);
 $meRole = (string) ($_SESSION['user_role'] ?? '');
@@ -57,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'M3U salvo.'];
             }
         }
-        header('Location: panel.php#tools');
+        header('Location: ' . extractor_url('panel.php') . '#tools');
         exit;
     }
     if ($form === 'xtream') {
@@ -88,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-        header('Location: panel.php#tools');
+        header('Location: ' . extractor_url('panel.php') . '#tools');
         exit;
     }
     if ($form === 'download') {
@@ -111,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['flash'] = ['type' => 'ok', 'msg' => 'Arquivo baixado (' . $r['bytes'] . ' bytes).'];
             }
         }
-        header('Location: panel.php#tools');
+        header('Location: ' . extractor_url('panel.php') . '#tools');
         exit;
     }
 }
@@ -176,7 +174,7 @@ header('Content-Type: text/html; charset=utf-8');
       <button type="button" data-sec="shop">PIX / Planos</button>
       <button type="button" data-sec="account">Conta</button>
       <?php if (extractor_is_admin_panel_user()): ?>
-      <a href="admin.php" style="display:block;padding:0.5rem 0.6rem;border-radius:8px;color:#8ec5ff;font-weight:600;text-decoration:none;border:1px solid transparent;">Administração</a>
+      <a href="<?= h(extractor_url('admin.php')) ?>" style="display:block;padding:0.5rem 0.6rem;border-radius:8px;color:#8ec5ff;font-weight:600;text-decoration:none;border:1px solid transparent;">Administração</a>
       <?php endif; ?>
     </nav>
     <p class="muted" style="margin-top:auto;font-size:0.75rem;">100% na hospedagem. Sem JavaScript no servidor alheio — só HTML estático + PHP.</p>
@@ -217,7 +215,7 @@ header('Content-Type: text/html; charset=utf-8');
     <section id="sec-tools" class="sec">
       <div class="card">
         <h2 style="margin-top:0;">M3U</h2>
-        <form method="post" action="panel.php">
+        <form method="post" action="<?= h(extractor_url('panel.php')) ?>">
           <input type="hidden" name="csrf" value="<?= h($csrf) ?>" />
           <input type="hidden" name="form" value="m3u" />
           <label>URL M3U</label>
@@ -229,7 +227,7 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
       <div class="card">
         <h2 style="margin-top:0;">Xtream</h2>
-        <form method="post" action="panel.php">
+        <form method="post" action="<?= h(extractor_url('panel.php')) ?>">
           <input type="hidden" name="csrf" value="<?= h($csrf) ?>" />
           <input type="hidden" name="form" value="xtream" />
           <label>Host</label>
@@ -246,7 +244,7 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
       <div class="card">
         <h2 style="margin-top:0;">Download URL única</h2>
-        <form method="post" action="panel.php">
+        <form method="post" action="<?= h(extractor_url('panel.php')) ?>">
           <input type="hidden" name="csrf" value="<?= h($csrf) ?>" />
           <input type="hidden" name="form" value="download" />
           <label>URL</label>
@@ -356,8 +354,10 @@ header('Content-Type: text/html; charset=utf-8');
 
   <script>
     const CSRF = <?= json_encode($csrf, JSON_THROW_ON_ERROR) ?>;
+    const API_URL = <?= json_encode(extractor_url('api.php'), JSON_THROW_ON_ERROR) ?>;
+    const DOWNLOAD_URL = <?= json_encode(extractor_url('download.php'), JSON_THROW_ON_ERROR) ?>;
     const api = async (action, extra = {}) => {
-      const r = await fetch('api.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, csrf: CSRF, ...extra }) });
+      const r = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, csrf: CSRF, ...extra }) });
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch { throw new Error(t); }
       if (!j.ok) throw new Error(j.error || 'erro');
@@ -497,7 +497,7 @@ header('Content-Type: text/html; charset=utf-8');
       for (const f of j.files) {
         const name = (f.local_path || '').split(/[/\\\\]/).pop();
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${f.id}</td><td>${escapeHtml(name)}</td><td>${f.bytes}</td><td><a href="download.php?id=${f.id}">Download</a></td>`;
+        tr.innerHTML = `<td>${f.id}</td><td>${escapeHtml(name)}</td><td>${f.bytes}</td><td><a href="${DOWNLOAD_URL}?id=${f.id}">Download</a></td>`;
         tb.appendChild(tr);
       }
     }
@@ -631,6 +631,6 @@ header('Content-Type: text/html; charset=utf-8');
 
     loadSites().catch(e => console.error(e));
   </script>
-  <p style="margin:1rem 1.25rem;"><a href="index.php?logout=1" style="color:#8ec5ff;">Sair</a> · <a href="index.php" style="color:#8ec5ff;">Início</a></p>
+  <p style="margin:1rem 1.25rem;"><a href="<?= h(extractor_url('index.php')) ?>?logout=1" style="color:#8ec5ff;">Sair</a> · <a href="<?= h(extractor_url('index.php')) ?>" style="color:#8ec5ff;">Início</a></p>
 </body>
 </html>

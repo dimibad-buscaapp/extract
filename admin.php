@@ -7,15 +7,13 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/users.php';
 
 if (!extractor_logged_in()) {
-    header('Location: login.php');
-    exit;
+    extractor_redirect('login.php');
 }
 
 $pdo = extractor_pdo();
 extractor_user_refresh_session($pdo);
 if (!extractor_logged_in()) {
-    header('Location: login.php');
-    exit;
+    extractor_redirect('login.php');
 }
 
 if (!extractor_is_admin_panel_user()) {
@@ -29,10 +27,7 @@ $meName = (string) ($_SESSION['user_name'] ?? '');
 $meRole = (string) ($_SESSION['user_role'] ?? '');
 $csrf = extractor_csrf_token();
 
-$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-$host = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
-$dir = rtrim(str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/'))), '/');
-$billingWebhookUrl = $scheme . '://' . $host . ($dir !== '' ? $dir : '') . '/billing_webhook.php';
+$billingWebhookUrl = extractor_absolute_url('billing_webhook.php');
 
 function h(string $s): string
 {
@@ -47,7 +42,7 @@ header('Content-Type: text/html; charset=utf-8');
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Administração — Extrator PHP</title>
-  <link rel="stylesheet" href="static/admin.css" />
+  <link rel="stylesheet" href="<?= h(extractor_url('static/admin.css')) ?>" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -71,7 +66,7 @@ header('Content-Type: text/html; charset=utf-8');
       <?php endif; ?>
     </nav>
     <div class="toplinks">
-      <a href="panel.php">Painel</a> · <a href="index.php?logout=1">Sair</a>
+      <a href="<?= h(extractor_url('panel.php')) ?>">Painel</a> · <a href="<?= h(extractor_url('index.php')) ?>?logout=1">Sair</a>
     </div>
   </aside>
   <main>
@@ -261,8 +256,9 @@ header('Content-Type: text/html; charset=utf-8');
       el.className = ok ? 'ok' : (t ? 'err' : 'muted');
     };
 
+    const ADMIN_API_URL = <?= json_encode(extractor_url('admin_api.php'), JSON_THROW_ON_ERROR) ?>;
     const api = async (action, extra = {}) => {
-      const r = await fetch('admin_api.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, csrf: CSRF, ...extra }) });
+      const r = await fetch(ADMIN_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, csrf: CSRF, ...extra }) });
       const t = await r.text();
       let j;
       try { j = JSON.parse(t); } catch { throw new Error(t); }

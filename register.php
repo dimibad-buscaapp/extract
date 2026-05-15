@@ -10,50 +10,61 @@ function h(string $s): string
 }
 
 if (!extractor_config_exists()) {
-    header('Location: index.php');
-    exit;
+    extractor_redirect('index.php');
 }
 
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/users.php';
 
 if (extractor_logged_in()) {
-    header('Location: panel.php');
-    exit;
+    extractor_redirect('panel.php');
 }
 
-$pdo = extractor_pdo();
-$plans = extractor_plans_list($pdo);
+$pdo = null;
+$plans = [];
+$setupError = '';
+try {
+    $pdo = extractor_pdo();
+    $plans = extractor_plans_list($pdo);
+} catch (Throwable $e) {
+    error_log('[Extrator register] DB: ' . $e->getMessage());
+    $setupError = 'O servidor ainda não consegue gravar a base de dados. Peça ao administrador para dar permissão de escrita à pasta data (e data/sessions) no IIS.';
+}
+
 $pref = preg_replace('/[^a-z0-9_]/i', '', (string) ($_GET['plan'] ?? ''));
 $errors = [];
 $recSite = trim((string) (extractor_config()['recaptcha_site_key'] ?? ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    extractor_verify_csrf();
-    try {
-        extractor_verify_recaptcha_if_configured();
-        $errors = extractor_register_user($pdo, $_POST);
-        if ($errors === []) {
-            $loginErr = extractor_login_user($pdo, (string) ($_POST['email'] ?? ''), (string) ($_POST['password'] ?? ''));
-            if ($loginErr !== '') {
-                $errors[] = $loginErr;
-            } else {
-                header('Location: panel.php');
-                exit;
+    if ($pdo === null) {
+        $errors[] = $setupError !== '' ? $setupError : 'Serviço temporariamente indisponível. Tente mais tarde.';
+    } else {
+        try {
+            extractor_verify_csrf();
+            extractor_verify_recaptcha_if_configured();
+            $errors = extractor_register_user($pdo, $_POST);
+            if ($errors === []) {
+                $loginErr = extractor_login_user($pdo, (string) ($_POST['email'] ?? ''), (string) ($_POST['password'] ?? ''));
+                if ($loginErr !== '') {
+                    $errors[] = $loginErr;
+                } else {
+                    extractor_redirect('panel.php');
+                }
             }
+        } catch (RuntimeException $e) {
+            $errors[] = $e->getMessage();
+        } catch (Throwable $e) {
+            error_log('[Extrator register] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $errors[] = getenv('EXTRACTOR_DEBUG') === '1'
+                ? $e->getMessage()
+                : 'Não foi possível criar a conta. Se o problema continuar, contacte o suporte.';
         }
-    } catch (RuntimeException $e) {
-        $errors[] = $e->getMessage();
-    } catch (Throwable $e) {
-        error_log('[Extrator register] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
-        $errors[] = getenv('EXTRACTOR_DEBUG') === '1'
-            ? $e->getMessage()
-            : 'Erro ao processar o registo.';
     }
 }
 
 $csrf = extractor_csrf_token();
 header('Content-Type: text/html; charset=utf-8');
+$css = extractor_url('static/landing.css');
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -61,7 +72,7 @@ header('Content-Type: text/html; charset=utf-8');
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Criar conta — Extrator</title>
-  <link rel="stylesheet" href="static/landing.css" />
+  <link rel="stylesheet" href="<?= h($css) ?>" />
   <?php if ($recSite !== ''): ?>
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <?php endif; ?>
@@ -69,13 +80,16 @@ header('Content-Type: text/html; charset=utf-8');
 <body class="page-auth">
   <div class="auth-bg" aria-hidden="true"></div>
   <header class="auth-nav">
-    <a class="brand" href="index.php">Extrator</a>
-    <a class="link-ghost" href="login.php">Entrar</a>
+    <a class="brand" href="<?= h(extractor_url('index.php')) ?>">Extrator</a>
+    <a class="link-ghost" href="<?= h(extractor_url('login.php')) ?>">Entrar</a>
   </header>
   <main class="auth-card-wrap auth-wide">
     <div class="auth-card">
       <h1>Criar conta</h1>
-      <p class="lead">O primeiro registo torna-se automaticamente <strong>Super Master</strong> (instalação). Os seguintes escolhem um plano.</p>
+      <p class="lead">Preencha os dados abaixo. A primeira conta neste servidor torna-se <strong>administrador principal</strong>; as seguintes escolhem um plano.</p>
+      <?php if ($setupError !== '' && $_SERVER['REQUEST_METHOD'] !== 'POST'): ?>
+        <div class="alert alert-err" role="alert"><?= h($setupError) ?></div>
+      <?php endif; ?>
       <?php if ($errors !== []): ?>
         <div class="alert alert-err" role="alert">
           <ul class="err-list">
@@ -85,7 +99,7 @@ header('Content-Type: text/html; charset=utf-8');
           </ul>
         </div>
       <?php endif; ?>
-      <form method="post" action="register.php" class="stack">
+      <form method="post" action="<?= h(extractor_url('register.php')) ?>" class="stack"<?= $pdo === null ? ' style="opacity:0.5;pointer-events:none;"' : '' ?>>
         <input type="hidden" name="csrf" value="<?= h($csrf) ?>" />
         <input type="text" name="website" value="" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true" />
         <label for="full_name">Nome completo</label>
@@ -131,7 +145,7 @@ header('Content-Type: text/html; charset=utf-8');
         <h2>Termos (resumo)</h2>
         <p>Esta aplicação destina-se a uso legítimo. O operador do servidor pode registar endereço IP e agente do navegador no registo. Os créditos são consumidos conforme a configuração do sistema. Consulte um advogado para textos legais definitivos.</p>
       </div>
-      <p class="foot-note"><a href="index.php">Voltar ao início</a></p>
+      <p class="foot-note"><a href="<?= h(extractor_url('index.php')) ?>">Voltar ao início</a></p>
     </div>
   </main>
 </body>

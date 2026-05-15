@@ -9,6 +9,17 @@ function h(string $s): string
     return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 }
 
+/** Texto amigável por plano (sem jargão técnico). */
+function extractor_plan_blurb(string $code): string
+{
+    return match ($code) {
+        'user' => 'Ideal para quem usa sozinho e quer organizar downloads com simplicidade.',
+        'reseller' => 'Para quem revende acesso e gere vários clientes no mesmo painel.',
+        'master' => 'Mais créditos e capacidade para equipas ou operações maiores.',
+        default => 'Plano flexível para o seu dia a dia.',
+    };
+}
+
 if (isset($_GET['logout'])) {
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
@@ -21,8 +32,7 @@ if (isset($_GET['logout'])) {
         'cookie_samesite' => 'Lax',
         'use_strict_mode' => true,
     ]);
-    header('Location: index.php');
-    exit;
+    extractor_redirect('index.php');
 }
 
 if (!extractor_config_exists()) {
@@ -34,15 +44,14 @@ if (!extractor_config_exists()) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Configuração — Extrator</title>
-  <link rel="stylesheet" href="static/landing.css" />
+  <link rel="stylesheet" href="<?= h(extractor_url('static/landing.css')) ?>" />
 </head>
 <body class="page-auth">
-  <div class="auth-bg"></div>
+  <div class="auth-bg" aria-hidden="true"></div>
   <main class="auth-card-wrap">
     <div class="auth-card auth-wide">
-      <h1>Configuração necessária</h1>
-      <p class="lead">Copie <code>config.example.php</code> para <code>config.local.php</code> e defina <code>app_secret</code> (mínimo 16 caracteres).</p>
-      <pre style="overflow:auto;font-size:0.8rem;background:rgba(0,0,0,.35);padding:0.75rem;border-radius:8px;">php -r "echo bin2hex(random_bytes(24)), PHP_EOL;"</pre>
+      <h1>Quase pronto</h1>
+      <p class="lead">O administrador do servidor precisa de concluir a configuração inicial (<code>config.local.php</code>). Depois disso esta página abre normalmente.</p>
     </div>
   </main>
 </body>
@@ -55,39 +64,43 @@ try {
     extractor_config();
 } catch (Throwable $e) {
     header('Content-Type: text/html; charset=utf-8');
-    echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Erro</title></head><body style="font-family:sans-serif;padding:2rem;">';
+    echo '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Erro</title></head><body style="font-family:sans-serif;padding:2rem;">';
     echo h($e->getMessage());
     echo '</body></html>';
     exit;
 }
 
 if (extractor_logged_in()) {
-    header('Location: panel.php');
-    exit;
+    extractor_redirect('panel.php');
 }
 
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/users.php';
 
 $plans = [];
+$userCount = 0;
 try {
     $pdo = extractor_pdo();
     $plans = extractor_plans_list($pdo);
     $userCount = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
 } catch (Throwable) {
-    $userCount = 0;
+    $plans = [];
 }
 
 header('Content-Type: text/html; charset=utf-8');
+$css = extractor_url('static/landing.css');
+$reg = extractor_url('register.php');
+$login = extractor_url('login.php');
+$home = extractor_url('index.php');
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Painel profissional de extração e gestão de conteúdos com créditos e níveis de acesso." />
-  <title>Extrator — Extração e gestão</title>
-  <link rel="stylesheet" href="static/landing.css" />
+  <meta name="description" content="Guarde sites, encontre ficheiros e descarregue tudo num painel simples, com créditos e suporte." />
+  <title>Extrator — O seu painel de conteúdos</title>
+  <link rel="stylesheet" href="<?= h($css) ?>" />
 </head>
 <body>
   <div class="landing-bg" aria-hidden="true"></div>
@@ -95,75 +108,129 @@ header('Content-Type: text/html; charset=utf-8');
 
   <header class="nav-shell">
     <div class="nav-inner">
-      <a class="brand" href="index.php">Extrator</a>
+      <a class="brand" href="<?= h($home) ?>">Extrator</a>
       <nav class="nav-links" aria-label="Principal">
+        <a class="btn btn-ghost" href="#como-funciona">Como funciona</a>
         <a class="btn btn-ghost" href="#planos">Planos</a>
-        <a class="btn btn-ghost" href="login.php">Entrar</a>
-        <a class="btn btn-primary" href="register.php">Criar conta</a>
+        <a class="btn btn-ghost" href="<?= h($login) ?>">Entrar</a>
+        <a class="btn btn-primary" href="<?= h($reg) ?>">Criar conta grátis</a>
       </nav>
     </div>
   </header>
 
   <section class="hero">
     <div>
-      <h1><span class="gradient-text">Extração estruturada</span> com créditos, níveis e painel seguro</h1>
-      <p class="lead">Automatize fluxos de descoberta e download respeitando limites da hospedagem. Cada conta tem o seu espaço e consumo de créditos configurável.</p>
+      <p class="eyebrow">Painel online · Acesso seguro</p>
+      <h1>Organize e <span class="gradient-text">descarregue</span> os seus conteúdos num só lugar</h1>
+      <p class="lead">Guarde os sites que usa, encontre links de ficheiros e mantenha uma biblioteca pessoal — sem complicação. Tudo num painel claro, com créditos e suporte quando precisar.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="register.php">Começar agora</a>
-        <a class="btn btn-ghost" href="login.php">Já tenho conta</a>
+        <a class="btn btn-primary" href="<?= h($reg) ?>">Começar agora</a>
+        <a class="btn btn-ghost" href="<?= h($login) ?>">Já tenho conta</a>
       </div>
-      <div class="stat-row" aria-label="Indicadores ilustrativos">
-        <div class="stat"><b>API</b><span>JSON + sessão</span></div>
-        <div class="stat"><b>SQLite</b><span>Multi-utilizador</span></div>
-        <div class="stat"><b>Créditos</b><span>Por download</span></div>
-      </div>
-      <p class="lead" style="margin-top:1.25rem;font-size:0.82rem;"><?= $userCount < 1 ? 'O primeiro registo cria o perfil <strong>Super Master</strong> desta instalação.' : 'Novos utilizadores escolhem um plano no registo.' ?></p>
+      <p class="trust-line"><?= $userCount < 1 ? 'Primeira conta neste servidor torna-se administrador principal.' : 'Escolha o plano que combina consigo no registo.' ?></p>
     </div>
     <div class="hero-visual">
       <div class="hero-visual-inner">
         <div class="pulse-ring" aria-hidden="true"></div>
-        <h2 style="margin:0;font-size:1.1rem;">Fluxo em camadas</h2>
-        <p style="margin:0.5rem 0 0;color:var(--muted);font-size:0.88rem;">Sites guardados, descoberta de links e biblioteca com permissões por conta.</p>
+        <h2 style="margin:0;font-size:1.15rem;">Tudo num painel</h2>
+        <p style="margin:0.5rem 0 0;color:var(--muted);font-size:0.9rem;">Sites guardados · Lista de ficheiros · Descargas · Suporte</p>
       </div>
     </div>
   </section>
 
-  <section class="section" id="planos">
-    <h2>Planos e hierarquia</h2>
-    <p class="sub">Valores exibidos são referência para o seu negócio — ajuste preços e créditos na base de dados (<code>plans</code>). O nível <strong>Super Master</strong> não está disponível no registo público.</p>
-    <div class="plans">
-      <?php foreach ($plans as $p): ?>
-        <article class="plan<?= ($p['code'] ?? '') === 'master' ? ' featured' : '' ?>">
-          <h3><?= h((string) ($p['display_name'] ?? '')) ?></h3>
-          <div class="role"><?= h((string) ($p['role'] ?? '')) ?></div>
-          <div class="price"><?= number_format((float) ($p['price_monthly'] ?? 0), 2, ',', ' ') ?> €<small>/mês</small></div>
-          <ul>
-            <li><?= (int) ($p['monthly_credits'] ?? 0) ?> créditos / mês (referência)</li>
-            <li><?= (int) ($p['max_subusers'] ?? 0) ?> sub-utilizadores máx. (referência)</li>
-            <li><?= !empty($p['can_resell']) ? 'Revenda permitida (referência)' : 'Uso direto' ?></li>
-          </ul>
-          <a class="btn btn-primary" style="width:100%;margin-top:1rem;text-decoration:none;" href="register.php?plan=<?= h((string) ($p['code'] ?? '')) ?>">Escolher este plano</a>
-        </article>
-      <?php endforeach; ?>
-
-      <article class="plan featured">
-        <div class="plan-badge">TOPO</div>
-        <h3>Super Master</h3>
-        <div class="role">super_master</div>
-        <div class="price">Sob consulta</div>
-        <ul>
-          <li>Créditos ilimitados na aplicação</li>
-          <li>Visibilidade global de sites e ficheiros</li>
-          <li>Defina políticas e integrações à medida</li>
-        </ul>
-        <span class="btn btn-ghost" style="width:100%;margin-top:1rem;cursor:default;opacity:0.85;">Atribuído ao 1.º registo</span>
+  <section class="section" id="como-funciona">
+    <h2>Como funciona</h2>
+    <p class="sub">Três passos simples — pensado para quem quer resultado, não manual técnico.</p>
+    <div class="steps">
+      <article class="step-card">
+        <span class="step-num">1</span>
+        <h3>Crie a sua conta</h3>
+        <p>Registe-se com e-mail e escolha o plano. Entre no painel em segundos.</p>
+      </article>
+      <article class="step-card">
+        <span class="step-num">2</span>
+        <h3>Guarde os seus sites</h3>
+        <p>Adicione as páginas de onde costuma obter conteúdos. O sistema ajuda a encontrar links úteis.</p>
+      </article>
+      <article class="step-card">
+        <span class="step-num">3</span>
+        <h3>Descarregue e organize</h3>
+        <p>Os ficheiros ficam na sua biblioteca. Pode voltar a descarregar quando quiser, dentro dos seus créditos.</p>
       </article>
     </div>
   </section>
 
+  <section class="section features-section">
+    <h2>O que pode fazer</h2>
+    <p class="sub">Ferramentas práticas para o dia a dia — sem precisar de instalar nada no computador.</p>
+    <div class="features">
+      <article class="feature-card">
+        <h3>Sites favoritos</h3>
+        <p>Guarde endereços e credenciais de forma segura no servidor.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Encontrar ficheiros</h3>
+        <p>Peça ao painel para listar PDFs, vídeos, ZIPs e outros links numa página.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Biblioteca</h3>
+        <p>Histórico do que já descarregou, com acesso rápido de novo.</p>
+      </article>
+      <article class="feature-card">
+        <h3>PIX e planos</h3>
+        <p>Recarregue créditos conforme o plano (quando o pagamento estiver activo).</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="planos">
+    <h2>Escolha o seu plano</h2>
+    <p class="sub">Preços de referência — pode ajustar valores no seu negócio. Pagamento e créditos no painel após o registo.</p>
+    <div class="plans">
+      <?php foreach ($plans as $p):
+          $code = (string) ($p['code'] ?? '');
+          $planUrl = extractor_url('register.php') . '?plan=' . rawurlencode($code);
+          ?>
+        <article class="plan<?= $code === 'master' ? ' featured' : '' ?>">
+          <h3><?= h((string) ($p['display_name'] ?? '')) ?></h3>
+          <p class="plan-blurb"><?= h(extractor_plan_blurb($code)) ?></p>
+          <div class="price"><?= number_format((float) ($p['price_monthly'] ?? 0), 2, ',', ' ') ?> €<small>/mês</small></div>
+          <ul>
+            <li><?= (int) ($p['monthly_credits'] ?? 0) ?> créditos por mês</li>
+            <li><?= (int) ($p['max_subusers'] ?? 0) > 0 ? 'Até ' . (int) $p['max_subusers'] . ' utilizadores na conta' : 'Uso individual' ?></li>
+            <li><?= !empty($p['can_resell']) ? 'Pode revender acesso' : 'Uso directo' ?></li>
+          </ul>
+          <a class="btn btn-primary plan-cta" href="<?= h($planUrl) ?>">Quero este plano</a>
+        </article>
+      <?php endforeach; ?>
+
+      <article class="plan plan-admin">
+        <div class="plan-badge">ADMIN</div>
+        <h3>Conta principal</h3>
+        <p class="plan-blurb">Reservada à primeira instalação neste servidor — gestão completa.</p>
+        <div class="price">Incluída</div>
+        <ul>
+          <li>Créditos ilimitados na app</li>
+          <li>Vê todos os utilizadores e ficheiros</li>
+          <li>Área de administração</li>
+        </ul>
+        <span class="btn btn-ghost plan-cta plan-cta-muted">Criada no 1.º registo</span>
+      </article>
+    </div>
+  </section>
+
+  <section class="section cta-band">
+    <h2>Pronto para experimentar?</h2>
+    <p class="sub">Crie a conta em menos de um minuto e explore o painel.</p>
+    <div class="hero-cta" style="justify-content:center;">
+      <a class="btn btn-primary" href="<?= h($reg) ?>">Criar conta</a>
+      <a class="btn btn-ghost" href="<?= h($login) ?>">Entrar</a>
+    </div>
+  </section>
+
   <footer class="site-footer">
-    <p>Uso legítimo apenas. Textos legais definitivos devem ser revistos por um advogado.</p>
-    <p style="margin-top:0.5rem;"><a href="login.php">Entrar</a> · <a href="register.php">Registo</a></p>
+    <p>Use apenas conteúdos que lhe pertencem ou que tenha autorização para obter.</p>
+    <p style="margin-top:0.5rem;"><a href="<?= h($login) ?>">Entrar</a> · <a href="<?= h($reg) ?>">Criar conta</a></p>
   </footer>
 </body>
 </html>

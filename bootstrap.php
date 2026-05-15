@@ -7,24 +7,29 @@ const EXTRACTOR_PHP_VERSION = '1.1.0';
 define('EXTRACTOR_ROOT', __DIR__);
 define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
 
-if (!is_dir(EXTRACTOR_DATA)) {
-    @mkdir(EXTRACTOR_DATA, 0700, true);
-}
+require_once __DIR__ . '/includes/urls.php';
+extractor_prepare_runtime();
 
 $sessionsDir = EXTRACTOR_DATA . '/sessions';
-if (!is_dir($sessionsDir)) {
-    @mkdir($sessionsDir, 0700, true);
-}
-// No IIS o pool muitas vezes não grava bem em %SystemRoot%\TEMP; usar pasta do projecto evita falhas em session_start / registo.
 if (is_dir($sessionsDir) && is_writable($sessionsDir)) {
     ini_set('session.save_path', $sessionsDir);
 }
 
-session_start([
-    'cookie_httponly' => true,
-    'cookie_samesite' => 'Lax',
-    'use_strict_mode' => true,
-]);
+try {
+    session_start([
+        'cookie_httponly' => true,
+        'cookie_samesite' => 'Lax',
+        'use_strict_mode' => true,
+    ]);
+} catch (Throwable $e) {
+    error_log('[Extrator] session_start: ' . $e->getMessage());
+    http_response_code(500);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Erro</title></head><body style="font-family:sans-serif;padding:2rem;max-width:32rem;">';
+    echo '<h1>Sessão indisponível</h1><p>O servidor não consegue gravar sessões. Dê permissão de escrita à pasta <strong>data</strong> (e <strong>data/sessions</strong>) para o utilizador do site no IIS.</p>';
+    echo '</body></html>';
+    exit;
+}
 
 function extractor_config_path(): string
 {
@@ -128,8 +133,7 @@ function extractor_logged_in(): bool
 function extractor_require_login(): void
 {
     if (!extractor_logged_in()) {
-        header('Location: login.php');
-        exit;
+        extractor_redirect('login.php');
     }
 }
 
