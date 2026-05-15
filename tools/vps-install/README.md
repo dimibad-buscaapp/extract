@@ -15,6 +15,8 @@ Ferramenta em **.NET 8** que, no **Windows Server** (incl. 2025):
 
 ## Gerar o .exe
 
+**Importante:** o ficheiro **`ExtractorVpsSetup.exe` não está no Git** (só o código C#). Tens de **compilar no PC** com `build.cmd` e **copiar** `publish\ExtractorVpsSetup.exe` para o VPS. No servidor podes fazer duplo clique em **`Abrir-instalador.cmd`** (na mesma pasta `tools\vps-install`): ele executa o `.exe` se existir em `publish\` ou ao lado, ou explica o que falta.
+
 Na pasta `tools\vps-install`, **uma** das opções:
 
 **A) CMD (recomendado se o PowerShell bloquear scripts)** — não depende da *execution policy*:

@@ -19,7 +19,7 @@ O painel público está previsto para **`https://ext.buscaapp.com/`** (SSL no se
 
 **Git + clone no VPS Windows:** ver [`docs/INSTALACAO-GIT-VPS.md`](docs/INSTALACAO-GIT-VPS.md) (pasta `C:\apps\Extrator`).
 
-**Instalador .exe (clone, `config.local.php`, permissões `data`):** [`tools/vps-install/README.md`](tools/vps-install/README.md) — compila com `tools/vps-install/build.cmd` (ou `build.ps1`) e copia `publish/ExtractorVpsSetup.exe` para o servidor.
+**Instalador .exe (clone, `config.local.php`, permissões `data`):** [`tools/vps-install/README.md`](tools/vps-install/README.md) — o **.exe não vem no Git**; compila com `tools/vps-install/build.cmd`, copia `publish/ExtractorVpsSetup.exe` para o VPS. Lá podes usar `tools/vps-install/Abrir-instalador.cmd`.
 
 **IIS, DNS e domínio `ext.buscaapp.com`:** ver [`docs/CONFIGURAR-SITE-IIS-DNS.md`](docs/CONFIGURAR-SITE-IIS-DNS.md).
 
