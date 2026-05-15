@@ -37,7 +37,8 @@ return [
      * Opcional — primeiro Super Master automático quando a tabela users está vazia (testes / primeira instalação).
      * Em produção: altere a senha no painel (Conta) e remova ou esvazie estes campos no config.
      */
-    'seed_super_master_email' => 'super@ext.buscaapp.com',
-    'seed_super_master_password' => 'BuscaApp2026!Test',
-    'seed_super_master_name' => 'Super Master',
+    /** Só na 1.ª base vazia; ou use: php tools/criar-super-master.php no VPS */
+    'seed_super_master_email' => 'admin@buscaapp.com',
+    'seed_super_master_password' => 'AdminBusca2026!',
+    'seed_super_master_name' => 'Administrador',
 ];
