@@ -158,3 +158,14 @@ Quando **HTTP** estiver estável, adiciona ligação **https**, porta **443**, c
 - Confirma **`php.ini`** e que **`C:\apps\Extrator\data`** é gravável pelo pool.
 
 Guia geral de DNS e firewall: [`CONFIGURAR-SITE-IIS-DNS.md`](CONFIGURAR-SITE-IIS-DNS.md) · problemas de ligação: [`SITE-NAO-ABRE-VPS.md`](SITE-NAO-ABRE-VPS.md).
+
+### HTTP 500 após activar `php.ini`
+
+1. **Recarrega** o código no servidor (`git pull`) para trazer **`web.config`** na raiz do site — ajuda o IIS a mostrar **mensagens de erro do PHP** em vez da página genérica “500”.
+2. No **`C:\PHP\php.ini`**: temporariamente `display_errors = On`, `log_errors = On` e por exemplo `error_log = "C:\PHP\logs\php-errors.log"` (cria a pasta `C:\PHP\logs`). Depois de `iisreset`, reproduz o erro e abre esse log.
+3. **Permissões** em **`C:\Apps\Extrator\data`**: o pool (ex.: `IIS AppPool\Extrat`) precisa de **Modificar** para criar **`app.sqlite`**.  
+   `icacls "C:\Apps\Extrator\data" /grant "IIS AppPool\Extrat:(OI)(CI)M" /T`  
+   (ajusta **`Extrat`** ao nome real do teu pool.)
+4. **Visualizador de eventos** do Windows → Registos de aplicações → **Application** (avisos/erros do IIS ou FastCGI).
+
+Quando o 500 desaparecer, em produção: `display_errors = Off`, `errorMode` mais restritivo no `web.config` ou remove o `web.config` se não precisares dele.
