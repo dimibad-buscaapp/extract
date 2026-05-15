@@ -104,7 +104,7 @@ function extractor_m3u_foreach(string $path, callable $callback, string $filter 
     if ($fh === false) {
         return;
     }
-    $pendingGroup = '';
+    $grpStack = [];
     $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
     while (($line = fgets($fh)) !== false) {
         $line = trim($line);
@@ -112,14 +112,11 @@ function extractor_m3u_foreach(string $path, callable $callback, string $filter 
             continue;
         }
         if (str_starts_with($line, '#EXTGRP:')) {
-            $pendingGroup = trim(substr($line, 8));
+            $grpStack[] = trim(substr($line, 8));
             continue;
         }
         if (str_starts_with($line, '#EXTINF:')) {
             $pendingMeta = extractor_m3u_parse_extinf($line);
-            if ($pendingGroup !== '') {
-                $pendingMeta['group'] = $pendingGroup;
-            }
             continue;
         }
         if ($line[0] === '#') {
@@ -141,10 +138,12 @@ function extractor_m3u_foreach(string $path, callable $callback, string $filter 
             'title' => $pendingMeta['title'] !== '' ? $pendingMeta['title'] : 'Item',
             'url' => $line,
             'kind' => $kind,
-            'group' => $pendingMeta['group'],
+            'group' => extractor_m3u_catalog_group_resolve($grpStack, (string) ($pendingMeta['group'] ?? '')),
             'logo' => $pendingMeta['logo'],
+            'path' => implode(' / ', $grpStack),
         ]);
         $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
+        $grpStack = [];
     }
     fclose($fh);
 }
@@ -183,7 +182,47 @@ function extractor_m3u_read_state_default(): array
         'byte_offset' => 0,
         'pending_group' => '',
         'pending_meta' => ['title' => 'Item', 'group' => 'Geral', 'logo' => ''],
+        'grp_stack' => [],
     ];
+}
+
+/**
+ * Grupo resumido para catálogo / listagem (não o caminho completo até episódio).
+ *
+ * @param list<string> $stack
+ */
+function extractor_m3u_catalog_group_from_stack(array $stack, string $fallback = 'Geral'): string
+{
+    $stack = array_values(array_filter(array_map('trim', $stack), static fn (string $s): bool => $s !== ''));
+    if ($stack === []) {
+        return $fallback;
+    }
+    $root = $stack[0];
+    if (preg_match('#\b(s[eé]rie?s?)\b#iu', $root)) {
+        return isset($stack[1]) ? 'Séries / ' . $stack[1] : 'Séries';
+    }
+
+    return implode(' / ', array_slice($stack, 0, 2));
+}
+
+/**
+ * @param list<string> $stack
+ */
+function extractor_m3u_catalog_group_resolve(array $stack, string $extinfGroup, string $fallback = 'Geral'): string
+{
+    $extinfGroup = trim($extinfGroup);
+    if ($extinfGroup !== '' && str_contains($extinfGroup, '/')) {
+        $parts = preg_split('#\s*/\s*#', $extinfGroup) ?: [];
+        $parts = array_values(array_filter(array_map('trim', $parts)));
+        if (count($parts) >= 2 && preg_match('#\b(s[eé]rie?s?)\b#iu', $parts[0])) {
+            return $parts[0] . ' / ' . $parts[1];
+        }
+        if (count($parts) >= 1) {
+            return implode(' / ', array_slice($parts, 0, 2));
+        }
+    }
+
+    return extractor_m3u_catalog_group_from_stack($stack, $fallback);
 }
 
 /**
@@ -210,7 +249,7 @@ function extractor_m3u_read_batch(string $path, array $readState, int $limit, st
         fgets($fh);
     }
 
-    $pendingGroup = (string) ($readState['pending_group'] ?? '');
+    $grpStack = (array) ($readState['grp_stack'] ?? []);
     $pendingMeta = (array) ($readState['pending_meta'] ?? ['title' => 'Item', 'group' => 'Geral', 'logo' => '']);
     $out = [];
 
@@ -220,14 +259,11 @@ function extractor_m3u_read_batch(string $path, array $readState, int $limit, st
             continue;
         }
         if (str_starts_with($line, '#EXTGRP:')) {
-            $pendingGroup = trim(substr($line, 8));
+            $grpStack[] = trim(substr($line, 8));
             continue;
         }
         if (str_starts_with($line, '#EXTINF:')) {
             $pendingMeta = extractor_m3u_parse_extinf($line);
-            if ($pendingGroup !== '') {
-                $pendingMeta['group'] = $pendingGroup;
-            }
             continue;
         }
         if ($line[0] === '#') {
@@ -249,10 +285,12 @@ function extractor_m3u_read_batch(string $path, array $readState, int $limit, st
             'title' => $pendingMeta['title'] !== '' ? $pendingMeta['title'] : 'Item',
             'url' => $line,
             'kind' => $kind,
-            'group' => $pendingMeta['group'],
+            'group' => extractor_m3u_catalog_group_resolve($grpStack, (string) ($pendingMeta['group'] ?? '')),
             'logo' => $pendingMeta['logo'],
+            'path' => implode(' / ', $grpStack),
         ];
         $pendingMeta = ['title' => 'Item', 'group' => 'Geral', 'logo' => ''];
+        $grpStack = [];
         if (count($out) >= $limit) {
             break;
         }
@@ -261,8 +299,9 @@ function extractor_m3u_read_batch(string $path, array $readState, int $limit, st
     $eof = feof($fh);
     $readState = [
         'byte_offset' => (int) ftell($fh),
-        'pending_group' => $pendingGroup,
+        'pending_group' => '',
         'pending_meta' => $pendingMeta,
+        'grp_stack' => $grpStack,
     ];
     fclose($fh);
 

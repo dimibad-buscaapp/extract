@@ -703,7 +703,7 @@ header('Content-Type: text/html; charset=utf-8');
         tr.cells[1].textContent = e.group || '—';
         tr.cells[2].textContent = e.kind === 'vod' ? 'VOD' : 'Live';
         tr.cells[3].textContent = e.title || '';
-        tr.cells[3].title = e.url || '';
+        tr.cells[3].title = (e.path ? e.path + '\n' : '') + (e.url || '');
         const cb = tr.querySelector('.m3u-ch');
         cb.dataset.url = e.url;
         cb.dataset.kind = e.kind || 'live';
