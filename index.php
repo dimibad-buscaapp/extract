@@ -9,6 +9,23 @@ function h(string $s): string
     return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 }
 
+if (isset($_GET['diag']) || isset($_GET['health'])) {
+    $healthFile = __DIR__ . '/health.php';
+    if (is_file($healthFile)) {
+        require $healthFile;
+        exit;
+    }
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Diag</title></head><body style="font-family:sans-serif;padding:2rem;background:#0a0c14;color:#eee;">';
+    echo '<h1>Actualize o código no servidor</h1>';
+    echo '<p>BUILD esperado: <code>' . h(EXTRACTOR_BUILD_ID) . '</code></p>';
+    echo '<p>Falta <code>health.php</code> — no VPS execute:</p><pre style="background:#111;padding:1rem;">cd C:\\Apps\\Extrator\n';
+    echo '& "C:\\Program Files\\Git\\bin\\git.exe" pull origin main</pre>';
+    echo '<p>Extensões: pdo_sqlite=' . (extension_loaded('pdo_sqlite') ? 'sim' : 'não') . ' · data gravável=' . (is_writable(EXTRACTOR_DATA) ? 'sim' : 'não') . '</p>';
+    echo '<p><a href="' . h(extractor_url('index.php')) . '">Voltar</a></p></body></html>';
+    exit;
+}
+
 /** Texto amigável por plano (sem jargão técnico). */
 function extractor_plan_blurb(string $code): string
 {
