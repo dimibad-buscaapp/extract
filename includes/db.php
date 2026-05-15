@@ -174,6 +174,9 @@ function extractor_pdo(): PDO
     if (!extractor_db_column_exists($pdo, 'files', 'user_id')) {
         $pdo->exec('ALTER TABLE files ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0');
     }
+    if (!extractor_db_column_exists($pdo, 'files', 'public_token')) {
+        $pdo->exec('ALTER TABLE files ADD COLUMN public_token TEXT');
+    }
 
     $pdo->exec('UPDATE sites SET same_origin_only = 0');
 

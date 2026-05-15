@@ -219,13 +219,15 @@ try {
             throw new RuntimeException('Créditos insuficientes para concluir o registo do ficheiro.');
         }
 
-        $pdo->prepare('INSERT INTO files (user_id, site_id, source_url, local_path, bytes, created_at) VALUES (?,?,?,?,?,?)')->execute([
+        $pubTok = bin2hex(random_bytes(16));
+        $pdo->prepare('INSERT INTO files (user_id, site_id, source_url, local_path, bytes, created_at, public_token) VALUES (?,?,?,?,?,?,?)')->execute([
             $uid,
             $siteId > 0 ? $siteId : null,
             $url,
             $dest,
             $r['bytes'],
             time(),
+            $pubTok,
         ]);
         $fid = (int) $pdo->lastInsertId();
         echo json_encode(['ok' => true, 'file_id' => $fid, 'bytes' => $r['bytes'], 'name' => basename($dest), 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
@@ -250,23 +252,134 @@ try {
         exit;
     }
 
-    if ($action === 'm3u_entries') {
+    if ($action === 'm3u_stats') {
         $id = (int) ($input['id'] ?? 0);
-        $offset = max(0, (int) ($input['offset'] ?? 0));
-        $limit = min(200, max(1, (int) ($input['limit'] ?? 50)));
         $resolved = extractor_m3u_resolve_path($pdo, $id, $uid, $super);
         if ($resolved === null) {
             throw new RuntimeException('Lista não encontrada.');
         }
-        $entries = extractor_m3u_list_entries($resolved['path'], $offset, $limit);
-        $total = 0;
-        $st = $pdo->prepare('SELECT entry_count FROM m3u_playlists WHERE id = ?');
-        $st->execute([$id]);
-        $row = $st->fetch();
-        if ($row) {
-            $total = (int) $row['entry_count'];
+        $counts = extractor_m3u_count_kinds($resolved['path']);
+        echo json_encode(['ok' => true, 'counts' => $counts]);
+        exit;
+    }
+
+    if ($action === 'm3u_entries') {
+        $id = (int) ($input['id'] ?? 0);
+        $offset = max(0, (int) ($input['offset'] ?? 0));
+        $limit = min(200, max(1, (int) ($input['limit'] ?? 50)));
+        $filter = (string) ($input['filter'] ?? 'all');
+        if (!in_array($filter, ['all', 'vod', 'live'], true)) {
+            $filter = 'all';
         }
-        echo json_encode(['ok' => true, 'entries' => $entries, 'offset' => $offset, 'total' => $total]);
+        $resolved = extractor_m3u_resolve_path($pdo, $id, $uid, $super);
+        if ($resolved === null) {
+            throw new RuntimeException('Lista não encontrada.');
+        }
+        $entries = extractor_m3u_list_entries($resolved['path'], $offset, $limit, $filter);
+        $counts = extractor_m3u_count_kinds($resolved['path']);
+        $total = $filter === 'vod' ? $counts['vod'] : ($filter === 'live' ? $counts['live'] : $counts['total']);
+        echo json_encode([
+            'ok' => true,
+            'entries' => $entries,
+            'offset' => $offset,
+            'total' => $total,
+            'counts' => $counts,
+            'filter' => $filter,
+        ]);
+        exit;
+    }
+
+    if ($action === 'm3u_export') {
+        $id = (int) ($input['id'] ?? 0);
+        $mode = (string) ($input['mode'] ?? 'vod_urls');
+        $urls = $input['urls'] ?? [];
+        if (!is_array($urls)) {
+            $urls = [];
+        }
+        $resolved = extractor_m3u_resolve_path($pdo, $id, $uid, $super);
+        if ($resolved === null) {
+            throw new RuntimeException('Lista não encontrada.');
+        }
+        $exportEntries = [];
+        if ($mode === 'selected' || $mode === 'selected_local') {
+            $picked = extractor_m3u_entries_by_urls($resolved['path'], array_map('strval', $urls));
+            if ($mode === 'selected_local') {
+                $exportEntries = extractor_m3u_map_local_files($pdo, $uid, $picked);
+            } else {
+                $exportEntries = $picked;
+            }
+        } elseif ($mode === 'local') {
+            $all = [];
+            extractor_m3u_foreach($resolved['path'], static function (array $e) use (&$all): void {
+                if ($e['kind'] === 'vod') {
+                    $all[] = $e;
+                }
+            }, 'vod');
+            $exportEntries = extractor_m3u_map_local_files($pdo, $uid, $all);
+        } else {
+            extractor_m3u_foreach($resolved['path'], static function (array $e) use (&$exportEntries): void {
+                if ($e['kind'] === 'vod') {
+                    $exportEntries[] = ['title' => $e['title'], 'url' => $e['url']];
+                }
+            }, 'vod');
+        }
+        if ($exportEntries === []) {
+            throw new RuntimeException('Nenhum item para exportar. Para lista local, descarregue os VOD primeiro.');
+        }
+        $body = extractor_m3u_format_playlist($exportEntries);
+        $outPath = EXTRACTOR_DATA . '/export_' . date('Ymd_His') . '.m3u';
+        file_put_contents($outPath, $body);
+        $label = match ($mode) {
+            'local', 'selected_local' => 'M3U local ' . date('d/m H:i'),
+            default => 'M3U VOD ' . date('d/m H:i'),
+        };
+        $newId = extractor_m3u_register_playlist($pdo, $uid, $outPath, $label, null);
+        echo json_encode([
+            'ok' => true,
+            'playlist_id' => $newId,
+            'entries' => count($exportEntries),
+            'download_url' => extractor_absolute_url('download.php?m3u_id=' . $newId),
+        ]);
+        exit;
+    }
+
+    if ($action === 'm3u_vod_download') {
+        $urls = $input['urls'] ?? [];
+        if (!is_array($urls) || $urls === []) {
+            throw new RuntimeException('Seleccione pelo menos um VOD.');
+        }
+        $urls = array_slice(array_values(array_filter(array_map('strval', $urls))), 0, 12);
+        $cost = (int) $cfg['credits_per_download'];
+        $results = [];
+        foreach ($urls as $url) {
+            if (!filter_var($url, FILTER_VALIDATE_URL)) {
+                $results[] = ['url' => $url, 'ok' => false, 'error' => 'URL inválida'];
+                continue;
+            }
+            if ($cost > 0 && !extractor_credit_try_debit($pdo, $uid, $cost, 'Download VOD M3U')) {
+                $results[] = ['url' => $url, 'ok' => false, 'error' => 'Créditos insuficientes'];
+                break;
+            }
+            $baseName = extractor_safe_filename(basename(parse_url($url, PHP_URL_PATH) ?: 'vod.bin'));
+            $dest = $outDir . '/vod_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '_' . $baseName;
+            $r = extractor_stream_url_to_file($url, $dest, []);
+            if (!$r['ok']) {
+                $results[] = ['url' => $url, 'ok' => false, 'error' => $r['error']];
+                continue;
+            }
+            $pdo->prepare('INSERT INTO files (user_id, site_id, source_url, local_path, bytes, created_at, public_token) VALUES (?,?,?,?,?,?,?)')->execute([
+                $uid,
+                null,
+                $url,
+                $dest,
+                $r['bytes'],
+                time(),
+                bin2hex(random_bytes(16)),
+            ]);
+            $fid = (int) $pdo->lastInsertId();
+            $results[] = ['url' => $url, 'ok' => true, 'file_id' => $fid, 'bytes' => $r['bytes']];
+        }
+        echo json_encode(['ok' => true, 'results' => $results, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
         exit;
     }
 

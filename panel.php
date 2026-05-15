@@ -238,6 +238,7 @@ header('Content-Type: text/html; charset=utf-8');
 
     <section id="sec-lib" class="sec">
       <div class="card">
+        <p class="muted" style="margin:0 0 0.5rem;">Ficheiros descarregados do Extrator ou dos canais M3U. Listas .m3u completas estão em <strong>M3U / Xtream → Listas guardadas</strong>.</p>
         <button type="button" class="secondary" id="btnRefreshLib">Atualizar</button>
         <table class="tbl" id="libTbl"><thead><tr><th>ID</th><th>Ficheiro</th><th>Tamanho</th><th></th></tr></thead><tbody></tbody></table>
       </div>
@@ -259,7 +260,7 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
       <div class="card">
         <h2 style="margin-top:0;">Listas guardadas</h2>
-        <p class="muted" style="margin:0 0 0.5rem;">As listas M3U ficam aqui (não em Sites). Pode descarregar o ficheiro .m3u ou os URLs dos canais para a Biblioteca.</p>
+        <p class="muted" style="margin:0 0 0.5rem;">Listas M3U (não em Sites). Descarregue VOD para arquivo, exporte M3U VOD (URLs) ou M3U local (ficheiros no servidor) para outro IPTV.</p>
         <button type="button" class="secondary" id="btnRefreshM3u">Actualizar</button>
         <table class="tbl" id="m3uTbl" style="margin-top:0.5rem;">
           <thead><tr><th>Nome</th><th>Tamanho</th><th>Canais</th><th>Acções</th></tr></thead>
@@ -394,19 +395,28 @@ header('Content-Type: text/html; charset=utf-8');
 
   <dialog id="dlgM3u">
     <div class="dlg-body">
-      <h2 id="m3uDlgTitle" style="margin-top:0;">Canais</h2>
+      <h2 id="m3uDlgTitle" style="margin-top:0;">Canais / VOD</h2>
       <p class="muted" id="m3uDlgMeta" style="font-size:0.82rem;"></p>
-      <div style="max-height:14rem;overflow:auto;border:1px solid #2c3140;border-radius:6px;padding:0.35rem;">
+      <label style="font-size:0.85rem;">Filtrar</label>
+      <select id="m3uFilter" style="max-width:12rem;margin-bottom:0.5rem;">
+        <option value="all">Todos</option>
+        <option value="vod" selected>Só VOD</option>
+        <option value="live">Só ao vivo</option>
+      </select>
+      <div style="max-height:12rem;overflow:auto;border:1px solid #2c3140;border-radius:6px;padding:0.35rem;">
         <table class="tbl" id="m3uEntriesTbl" style="margin:0;">
-          <thead><tr><th></th><th>Nome</th><th>URL</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Tipo</th><th>Nome</th><th>URL</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
         <button type="button" class="secondary" id="m3uPrev">Anterior</button>
         <button type="button" class="secondary" id="m3uNext">Seguinte</button>
-        <button type="button" class="primary" id="m3uDlSelected">Baixar seleccionados</button>
+        <button type="button" class="primary" id="m3uDlVod">Baixar VOD → arquivo</button>
+        <button type="button" class="secondary" id="m3uExportVod">Exportar M3U VOD</button>
+        <button type="button" class="secondary" id="m3uExportLocal">Exportar M3U local</button>
       </div>
+      <p class="muted" id="m3uDlgHint" style="font-size:0.78rem;margin:0.35rem 0 0;">M3U VOD = URLs para outro IPTV. M3U local = ficheiros descarregados com link público.</p>
       <p class="muted" id="m3uDlgStatus" style="font-size:0.82rem;margin:0.5rem 0 0;"></p>
       <div class="dlg-actions">
         <button type="button" class="secondary" id="m3uDlgClose">Fechar</button>
@@ -575,7 +585,18 @@ header('Content-Type: text/html; charset=utf-8');
 
     let m3uDlgId = 0;
     let m3uDlgOffset = 0;
+    let m3uDlgCounts = { vod: 0, live: 0, total: 0 };
     const m3uPageSize = 50;
+    const m3uFilterEl = document.getElementById('m3uFilter');
+
+    function m3uSelectedUrls(vodOnly) {
+      const urls = [];
+      document.querySelectorAll('.m3u-ch:checked').forEach(cb => {
+        if (vodOnly && cb.dataset.kind !== 'vod') return;
+        if (cb.dataset.url) urls.push(cb.dataset.url);
+      });
+      return urls;
+    }
 
     async function loadM3uList() {
       const j = await api('m3u_list');
@@ -610,29 +631,37 @@ header('Content-Type: text/html; charset=utf-8');
     document.getElementById('m3uDlgClose').addEventListener('click', () => dlgM3u.close());
 
     async function loadM3uEntriesPage() {
-      const j = await api('m3u_entries', { id: m3uDlgId, offset: m3uDlgOffset, limit: m3uPageSize });
+      const filter = m3uFilterEl ? m3uFilterEl.value : 'vod';
+      const j = await api('m3u_entries', { id: m3uDlgId, offset: m3uDlgOffset, limit: m3uPageSize, filter });
+      if (j.counts) m3uDlgCounts = j.counts;
       const tb = document.querySelector('#m3uEntriesTbl tbody');
       tb.innerHTML = '';
       for (const e of j.entries || []) {
         const tr = document.createElement('tr');
-        const short = e.url.length > 48 ? e.url.slice(0, 45) + '…' : e.url;
-        tr.innerHTML = '<td><input type="checkbox" class="m3u-ch" /></td><td></td><td></td><td><button type="button" class="m3u-dl-one">1×</button></td>';
-        tr.cells[1].textContent = e.title || '';
-        tr.cells[2].textContent = short;
-        tr.cells[2].title = e.url;
-        tr.querySelector('.m3u-ch').dataset.url = e.url;
-        tr.querySelector('.m3u-dl-one').addEventListener('click', async () => {
-          try {
-            await api('download_one', { url: e.url, filename: (e.title || 'canal').replace(/[^\w.-]+/g, '_').slice(0, 40) });
-            document.getElementById('m3uDlgStatus').textContent = 'Pedido enviado — veja Biblioteca.';
-          } catch (err) { document.getElementById('m3uDlgStatus').textContent = err.message; }
-        });
+        const short = e.url.length > 40 ? e.url.slice(0, 37) + '…' : e.url;
+        tr.innerHTML = '<td><input type="checkbox" class="m3u-ch" /></td><td></td><td></td><td></td>';
+        tr.cells[1].textContent = e.kind === 'vod' ? 'VOD' : 'Live';
+        tr.cells[2].textContent = e.title || '';
+        tr.cells[3].textContent = short;
+        tr.cells[3].title = e.url;
+        const cb = tr.querySelector('.m3u-ch');
+        cb.dataset.url = e.url;
+        cb.dataset.kind = e.kind || 'live';
+        if (e.kind === 'vod') cb.checked = true;
         tb.appendChild(tr);
       }
       const total = Number(j.total || 0);
-      document.getElementById('m3uDlgMeta').textContent = 'A mostrar ' + (m3uDlgOffset + 1) + '–' + Math.min(m3uDlgOffset + m3uPageSize, total) + ' de ' + total + ' canais. Streams ao vivo (.ts) podem falhar; VOD/mp4 costuma funcionar.';
+      const c = m3uDlgCounts;
+      document.getElementById('m3uDlgMeta').textContent = 'A mostrar ' + (m3uDlgOffset + 1) + '–' + Math.min(m3uDlgOffset + m3uPageSize, total) + ' de ' + total + ' (' + (c.vod || 0) + ' VOD, ' + (c.live || 0) + ' ao vivo).';
       document.getElementById('m3uPrev').disabled = m3uDlgOffset <= 0;
       document.getElementById('m3uNext').disabled = m3uDlgOffset + m3uPageSize >= total;
+    }
+
+    if (m3uFilterEl) {
+      m3uFilterEl.addEventListener('change', () => {
+        m3uDlgOffset = 0;
+        loadM3uEntriesPage().catch(e => alert(e.message));
+      });
     }
 
     function openM3uDlg(id, label, total) {
@@ -653,22 +682,40 @@ header('Content-Type: text/html; charset=utf-8');
       loadM3uEntriesPage().catch(e => alert(e.message));
     });
 
-    document.getElementById('m3uDlSelected').addEventListener('click', async () => {
-      const boxes = document.querySelectorAll('.m3u-ch:checked');
-      if (!boxes.length) { alert('Seleccione pelo menos um canal.'); return; }
+    document.getElementById('m3uDlVod').addEventListener('click', async () => {
+      const urls = m3uSelectedUrls(true);
+      if (!urls.length) { alert('Seleccione itens VOD (ou filtre Só VOD).'); return; }
       const st = document.getElementById('m3uDlgStatus');
-      let ok = 0;
-      for (const cb of boxes) {
-        const url = cb.getAttribute('data-url');
-        if (!url) continue;
-        try {
-          await api('download_one', { url });
-          ok++;
-        } catch (e) {
-          st.textContent = 'Erro em ' + url.slice(0, 40) + '…: ' + e.message;
-        }
-      }
-      st.textContent = 'Concluído: ' + ok + '/' + boxes.length + ' pedidos. Ficheiros na Biblioteca.';
+      st.textContent = 'A descarregar ' + urls.length + ' VOD…';
+      try {
+        const j = await api('m3u_vod_download', { urls });
+        const ok = (j.results || []).filter(r => r.ok).length;
+        st.textContent = 'Arquivo: ' + ok + '/' + urls.length + ' guardados na Biblioteca. Pode exportar M3U local.';
+      } catch (e) { st.textContent = e.message; }
+    });
+
+    document.getElementById('m3uExportVod').addEventListener('click', async () => {
+      const st = document.getElementById('m3uDlgStatus');
+      const urls = m3uSelectedUrls(false);
+      const body = { id: m3uDlgId, mode: urls.length ? 'selected' : 'vod_urls' };
+      if (urls.length) body.urls = urls;
+      try {
+        const j = await api('m3u_export', body);
+        st.innerHTML = 'M3U VOD criada (' + j.entries + ' itens). <a href="' + j.download_url + '" target="_blank" rel="noopener">Descarregar</a> — use noutro servidor IPTV.';
+        await loadM3uList();
+      } catch (e) { st.textContent = e.message; }
+    });
+
+    document.getElementById('m3uExportLocal').addEventListener('click', async () => {
+      const st = document.getElementById('m3uDlgStatus');
+      const urls = m3uSelectedUrls(true);
+      const body = { id: m3uDlgId, mode: urls.length ? 'selected_local' : 'local' };
+      if (urls.length) body.urls = urls;
+      try {
+        const j = await api('m3u_export', body);
+        st.innerHTML = 'M3U local criada (' + j.entries + ' itens). <a href="' + j.download_url + '" target="_blank" rel="noopener">Descarregar</a>';
+        await loadM3uList();
+      } catch (e) { st.textContent = e.message; }
     });
 
     if (location.hash === '#tools' || M3U_HIGHLIGHT) {

@@ -3,6 +3,39 @@
 declare(strict_types=1);
 
 /**
+ * @return 'vod'|'live'
+ */
+function extractor_m3u_entry_kind(string $url, string $title = ''): string
+{
+    $u = strtolower($url);
+    $t = strtolower($title);
+
+    if (preg_match('#/(live|stream|broadcast)(/|$)#', $u)) {
+        return 'live';
+    }
+    if (preg_match('#/(movie|series|vod|filme|filmes|serie|series)(/|$)#', $u)) {
+        return 'vod';
+    }
+    if (preg_match('#\.(mp4|mkv|avi|mov|wmv|flv|webm|mp3|m4v|pdf|zip|rar)(\?|$)#i', $u)) {
+        return 'vod';
+    }
+    if (preg_match('#[?&]type=(movie|series|vod)#i', $u)) {
+        return 'vod';
+    }
+    if (preg_match('#\.ts(\?|$)#', $u) && !preg_match('#/(movie|series|vod)/#', $u)) {
+        return 'live';
+    }
+    if (preg_match('#\.m3u8(\?|$)#', $u) && preg_match('#/(live)/#', $u)) {
+        return 'live';
+    }
+    if (str_contains($t, 'vod') || str_contains($t, 'filme') || str_contains($t, 'série') || str_contains($t, 'serie')) {
+        return 'vod';
+    }
+
+    return 'live';
+}
+
+/**
  * @return array{path: string, name: string}|null
  */
 function extractor_m3u_resolve_path(PDO $pdo, int $playlistId, int $uid, bool $super): ?array
@@ -37,41 +70,18 @@ function extractor_m3u_resolve_path(PDO $pdo, int $playlistId, int $uid, bool $s
     return ['path' => $realFile, 'name' => $name];
 }
 
-function extractor_m3u_count_entries(string $path): int
+/**
+ * @param callable(array{title: string, url: string, kind: string}): void $callback
+ */
+function extractor_m3u_foreach(string $path, callable $callback, string $filter = 'all'): void
 {
     if (!is_file($path)) {
-        return 0;
+        return;
     }
     $fh = fopen($path, 'rb');
     if ($fh === false) {
-        return 0;
+        return;
     }
-    $n = 0;
-    while (($line = fgets($fh)) !== false) {
-        $line = trim($line);
-        if ($line !== '' && preg_match('#^https?://#i', $line)) {
-            $n++;
-        }
-    }
-    fclose($fh);
-
-    return $n;
-}
-
-/**
- * @return list<array{title: string, url: string}>
- */
-function extractor_m3u_list_entries(string $path, int $offset = 0, int $limit = 100): array
-{
-    if (!is_file($path) || $limit < 1) {
-        return [];
-    }
-    $fh = fopen($path, 'rb');
-    if ($fh === false) {
-        return [];
-    }
-    $out = [];
-    $skipped = 0;
     $pendingTitle = '';
     while (($line = fgets($fh)) !== false) {
         $line = trim($line);
@@ -81,6 +91,7 @@ function extractor_m3u_list_entries(string $path, int $offset = 0, int $limit = 
         if (str_starts_with($line, '#EXTINF:')) {
             $pos = strrpos($line, ',');
             $pendingTitle = $pos !== false ? trim(substr($line, $pos + 1)) : 'Canal';
+
             continue;
         }
         if ($line[0] === '#') {
@@ -89,21 +100,133 @@ function extractor_m3u_list_entries(string $path, int $offset = 0, int $limit = 
         if (!preg_match('#^https?://#i', $line)) {
             continue;
         }
-        if ($skipped < $offset) {
-            $skipped++;
+        $kind = extractor_m3u_entry_kind($line, $pendingTitle);
+        if ($filter === 'vod' && $kind !== 'vod') {
             $pendingTitle = '';
             continue;
         }
-        $out[] = [
-            'title' => $pendingTitle !== '' ? $pendingTitle : ('Canal ' . (count($out) + $offset + 1)),
-            'url' => $line,
-        ];
-        $pendingTitle = '';
-        if (count($out) >= $limit) {
-            break;
+        if ($filter === 'live' && $kind !== 'live') {
+            $pendingTitle = '';
+            continue;
         }
+        $callback([
+            'title' => $pendingTitle !== '' ? $pendingTitle : 'Item',
+            'url' => $line,
+            'kind' => $kind,
+        ]);
+        $pendingTitle = '';
     }
     fclose($fh);
+}
+
+/**
+ * @return array{vod: int, live: int, total: int}
+ */
+function extractor_m3u_count_kinds(string $path): array
+{
+    $vod = 0;
+    $live = 0;
+    extractor_m3u_foreach($path, static function (array $e) use (&$vod, &$live): void {
+        if ($e['kind'] === 'vod') {
+            $vod++;
+        } else {
+            $live++;
+        }
+    });
+
+    return ['vod' => $vod, 'live' => $live, 'total' => $vod + $live];
+}
+
+function extractor_m3u_count_entries(string $path): int
+{
+    return extractor_m3u_count_kinds($path)['total'];
+}
+
+/**
+ * @return list<array{title: string, url: string, kind: string}>
+ */
+function extractor_m3u_list_entries(string $path, int $offset = 0, int $limit = 100, string $filter = 'all'): array
+{
+    if (!is_file($path) || $limit < 1) {
+        return [];
+    }
+    $out = [];
+    $skipped = 0;
+    extractor_m3u_foreach($path, static function (array $e) use (&$out, &$skipped, $offset, $limit): void {
+        if ($skipped < $offset) {
+            $skipped++;
+
+            return;
+        }
+        if (count($out) >= $limit) {
+            return;
+        }
+        $out[] = $e;
+    }, $filter);
+
+    return $out;
+}
+
+/**
+ * @param list<array{title: string, url: string}> $entries
+ */
+function extractor_m3u_format_playlist(array $entries): string
+{
+    $lines = ['#EXTM3U'];
+    foreach ($entries as $e) {
+        $title = str_replace(["\r", "\n", ','], ' ', (string) ($e['title'] ?? 'Item'));
+        $title = trim($title) !== '' ? trim($title) : 'Item';
+        $url = trim((string) ($e['url'] ?? ''));
+        if ($url === '' || !preg_match('#^https?://#i', $url)) {
+            continue;
+        }
+        $lines[] = '#EXTINF:-1,' . $title;
+        $lines[] = $url;
+    }
+
+    return implode("\n", $lines) . "\n";
+}
+
+/**
+ * @param list<string> $urls
+ * @return list<array{title: string, url: string, kind: string}>
+ */
+function extractor_m3u_entries_by_urls(string $path, array $urls): array
+{
+    $want = array_flip(array_map('strval', $urls));
+    if ($want === []) {
+        return [];
+    }
+    $found = [];
+    extractor_m3u_foreach($path, static function (array $e) use (&$found, $want): void {
+        if (isset($want[$e['url']]) && !isset($found[$e['url']])) {
+            $found[$e['url']] = $e;
+        }
+    });
+
+    return array_values($found);
+}
+
+/**
+ * @return list<array{title: string, url: string}>
+ */
+function extractor_m3u_map_local_files(PDO $pdo, int $userId, array $entries): array
+{
+    $st = $pdo->prepare(
+        'SELECT id, public_token, source_url FROM files WHERE user_id = ? AND source_url = ? AND public_token IS NOT NULL AND public_token != \'\' ORDER BY id DESC LIMIT 1'
+    );
+    $out = [];
+    foreach ($entries as $e) {
+        $st->execute([$userId, $e['url']]);
+        $row = $st->fetch();
+        if (!$row) {
+            continue;
+        }
+        $out[] = [
+            'title' => $e['title'],
+            'url' => extractor_absolute_url('media.php?t=' . rawurlencode((string) $row['public_token']) . '&f=' . (int) $row['id']),
+        ];
+    }
 
     return $out;
 }
@@ -120,7 +243,8 @@ function extractor_m3u_register_playlist(PDO $pdo, int $userId, string $absolute
     }
     $fileName = basename($real);
     $bytes = (int) filesize($real);
-    $count = extractor_m3u_count_entries($real);
+    $counts = extractor_m3u_count_kinds($real);
+    $count = $counts['total'];
     $now = time();
 
     $st = $pdo->prepare('SELECT id FROM m3u_playlists WHERE file_name = ?');
@@ -163,7 +287,7 @@ function extractor_m3u_import_orphans(PDO $pdo, int $userId): int
     $imported = 0;
     foreach (glob(EXTRACTOR_DATA . '/*.m3u') ?: [] as $path) {
         $base = basename($path);
-        if (!preg_match('/^lista(_xtream)?_/i', $base)) {
+        if (!preg_match('/^(lista(_xtream)?_|export_)/i', $base)) {
             continue;
         }
         $st = $pdo->prepare('SELECT id FROM m3u_playlists WHERE file_name = ?');
@@ -180,4 +304,19 @@ function extractor_m3u_import_orphans(PDO $pdo, int $userId): int
     }
 
     return $imported;
+}
+
+function extractor_file_ensure_public_token(PDO $pdo, int $fileId): string
+{
+    $st = $pdo->prepare('SELECT public_token FROM files WHERE id = ?');
+    $st->execute([$fileId]);
+    $row = $st->fetch();
+    $tok = trim((string) ($row['public_token'] ?? ''));
+    if ($tok !== '') {
+        return $tok;
+    }
+    $tok = bin2hex(random_bytes(16));
+    $pdo->prepare('UPDATE files SET public_token = ? WHERE id = ?')->execute([$tok, $fileId]);
+
+    return $tok;
 }
