@@ -9,8 +9,52 @@ const EXTRACTOR_BUILD_ID = '2026-05-15-60d886f';
 define('EXTRACTOR_ROOT', __DIR__);
 define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
 
-require_once __DIR__ . '/includes/urls.php';
-extractor_prepare_runtime();
+if (is_file(__DIR__ . '/includes/urls.php')) {
+    require_once __DIR__ . '/includes/urls.php';
+    extractor_prepare_runtime();
+} else {
+    if (!function_exists('extractor_base_path')) {
+        function extractor_base_path(): string
+        {
+            static $base = null;
+            if ($base !== null) {
+                return $base;
+            }
+            $script = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+            $dir = dirname($script);
+            $base = ($dir === '/' || $dir === '.' || $dir === '\\') ? '' : rtrim($dir, '/');
+
+            return $base;
+        }
+        function extractor_url(string $path = ''): string
+        {
+            $path = ltrim(str_replace('\\', '/', $path), '/');
+            $base = extractor_base_path();
+
+            return $path === '' ? ($base === '' ? '/' : $base . '/') : ($base === '' ? '' : $base) . '/' . $path;
+        }
+        function extractor_redirect(string $path): never
+        {
+            header('Location: ' . extractor_url($path));
+            exit;
+        }
+        function extractor_absolute_url(string $path): string
+        {
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+
+            return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . extractor_url($path);
+        }
+        function extractor_prepare_runtime(): void
+        {
+            foreach ([EXTRACTOR_DATA, EXTRACTOR_DATA . '/out', EXTRACTOR_DATA . '/sessions'] as $dir) {
+                if (!is_dir($dir)) {
+                    @mkdir($dir, 0770, true);
+                }
+            }
+        }
+    }
+    extractor_prepare_runtime();
+}
 
 $sessionsDir = EXTRACTOR_DATA . '/sessions';
 if (is_dir($sessionsDir) && is_writable($sessionsDir)) {

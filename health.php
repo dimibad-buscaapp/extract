@@ -12,10 +12,11 @@ header('Content-Type: text/html; charset=utf-8');
 
 $checks = [];
 
+$buildId = defined('EXTRACTOR_BUILD_ID') ? (string) EXTRACTOR_BUILD_ID : '(bootstrap antigo — falta git pull completo)';
 $checks['build_id'] = [
-    'ok' => true,
+    'ok' => defined('EXTRACTOR_BUILD_ID'),
     'label' => 'Versão do código (BUILD_ID)',
-    'detail' => EXTRACTOR_BUILD_ID,
+    'detail' => $buildId,
 ];
 
 $checks['urls_helper'] = [
