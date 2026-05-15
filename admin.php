@@ -58,6 +58,9 @@ header('Content-Type: text/html; charset=utf-8');
       <button type="button" data-sec="tx">Transacções</button>
       <button type="button" data-sec="reports">Relatórios</button>
       <button type="button" data-sec="finance">Financeiro</button>
+      <?php if ($isSuper): ?>
+        <button type="button" data-sec="payments">Pagamentos</button>
+      <?php endif; ?>
       <button type="button" data-sec="tickets">Tickets</button>
       <?php if ($isSuper): ?>
         <button type="button" data-sec="plans">Planos</button>
@@ -130,37 +133,52 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
     </section>
 
-    <section id="sec-finance" class="sec">
+    <?php if ($isSuper): ?>
+    <section id="sec-payments" class="sec">
       <div class="card">
-        <?php if ($isSuper): ?>
-        <h2 style="margin-top:0;">Pagamentos (PIX)</h2>
-        <p class="muted">Configure Mercado Pago ou Asaas. Valores em reais (BRL). Chaves em <code>data/payment_settings.json</code> sobrepõem <code>config.local.php</code>.</p>
-        <form id="payCfgForm" style="display:grid;gap:0.5rem;max-width:32rem;margin-bottom:1rem;">
+        <h2 style="margin-top:0;">Mercado Pago / PIX</h2>
+        <p class="muted">Menu exclusivo Super Master. Preços dos planos em <strong>R$</strong>. Token guardado em <code>data/payment_settings.json</code>.</p>
+        <form id="payCfgForm" class="pay-cfg">
           <label>Provedor activo</label>
           <select id="payProvider">
-            <option value="mercadopago">Mercado Pago</option>
+            <option value="mercadopago">Mercado Pago (recomendado)</option>
             <option value="asaas">Asaas</option>
-            <option value="demo">Demonstração (sem API)</option>
+            <option value="demo">Demonstração (sem QR real)</option>
           </select>
-          <label>Mercado Pago — Access Token</label>
-          <input type="password" id="mpToken" placeholder="Deixe vazio para manter o actual" autocomplete="off" />
-          <span class="muted" id="mpTokenHint" style="font-size:0.8rem;"></span>
-          <label>Mercado Pago — Public Key</label>
-          <input type="text" id="mpPub" autocomplete="off" />
-          <label><input type="checkbox" id="mpSandbox" /> Credenciais de teste (sandbox)</label>
-          <label>Asaas — API Key</label>
-          <input type="password" id="asaasKey" placeholder="Deixe vazio para manter o actual" autocomplete="off" />
-          <span class="muted" id="asaasKeyHint" style="font-size:0.8rem;"></span>
-          <label><input type="checkbox" id="asaasSandbox" /> Asaas sandbox</label>
-          <label>Token webhook Asaas (opcional)</label>
-          <input type="text" id="asaasWh" autocomplete="off" />
-          <button type="submit" style="background:#3b6df6;color:#fff;border:0;padding:0.5rem 0.85rem;border-radius:8px;cursor:pointer;font-weight:600;width:fit-content;">Guardar configuração</button>
+          <fieldset class="pay-fieldset">
+            <legend>Mercado Pago</legend>
+            <label>Access Token</label>
+            <input type="password" id="mpToken" placeholder="Cole o token; vazio = manter" autocomplete="off" />
+            <span class="muted hint" id="mpTokenHint"></span>
+            <label>Public Key (opcional)</label>
+            <input type="text" id="mpPub" autocomplete="off" />
+            <label class="chk-inline"><input type="checkbox" id="mpSandbox" /> Sandbox (teste)</label>
+          </fieldset>
+          <fieldset class="pay-fieldset">
+            <legend>Asaas</legend>
+            <label>API Key</label>
+            <input type="password" id="asaasKey" placeholder="Vazio = manter" autocomplete="off" />
+            <span class="muted hint" id="asaasKeyHint"></span>
+            <label class="chk-inline"><input type="checkbox" id="asaasSandbox" /> Sandbox</label>
+            <label>Token webhook (opcional)</label>
+            <input type="text" id="asaasWh" autocomplete="off" />
+          </fieldset>
+          <button type="submit" class="btn-primary">Guardar configuração</button>
         </form>
+        <p class="muted" style="margin-top:1rem;">Webhook (Mercado Pago + Asaas):</p>
+        <code id="whUrl" class="wh-url"><?= h($billingWebhookUrl) ?></code>
+        <button type="button" id="btnCopyWebhook" class="btn-muted" style="margin-top:0.35rem;">Copiar URL</button>
+        <p class="muted" id="payCfgStatus" style="margin-top:0.5rem;"></p>
+      </div>
+    </section>
+    <?php endif; ?>
+
+    <section id="sec-finance" class="sec">
+      <div class="card">
+        <?php if (!$isSuper): ?>
+        <p class="muted">Configuração do Mercado Pago: entre como <strong>Super Master</strong> e use o menu <strong>Pagamentos</strong>.</p>
         <?php endif; ?>
-        <p class="muted">Webhook (POST JSON) — mesma URL no Mercado Pago e/ou Asaas:</p>
-        <p><strong>URL:</strong><br /><code id="whUrl" style="font-size:0.8rem;word-break:break-all;"><?= h($billingWebhookUrl) ?></code></p>
-        <button type="button" id="btnCopyWebhook" style="background:#3a3f52;color:#fff;border:0;padding:0.45rem 0.75rem;border-radius:8px;cursor:pointer;">Copiar URL</button>
-        <h2 style="margin-top:1rem;">Últimos pagamentos</h2>
+        <h2 style="margin-top:0;">Histórico PIX</h2>
         <table class="tbl" id="payTbl"><thead><tr><th>ID</th><th>User</th><th>Plano</th><th>Valor</th><th>Prov.</th><th>Estado</th><th>Criado</th></tr></thead><tbody></tbody></table>
       </div>
     </section>
@@ -215,28 +233,29 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
     </section>
     <?php endif; ?>
+    <p class="muted" style="font-size:0.72rem;margin-top:2rem;">Build: <?= h(defined('EXTRACTOR_BUILD_ID') ? (string) EXTRACTOR_BUILD_ID : '?') ?> — confirme em <a href="<?= h(extractor_url('health.php')) ?>" style="color:#8ec5ff;">health.php</a></p>
   </main>
 
   <dialog id="dlgPlan" style="border:1px solid #2c3140;border-radius:10px;background:#1a1c26;color:#e8e8ef;padding:0;max-width:26rem;width:calc(100% - 2rem);">
     <div style="padding:1rem;">
       <h2 id="planDlgTitle" style="margin-top:0;font-size:1rem;">Plano</h2>
-      <label>Código (único, a-z)</label>
-      <input type="text" id="plCode" pattern="[a-z][a-z0-9_]+" />
-      <label>Nome visível</label>
-      <input type="text" id="plName" />
-      <label>Papel atribuído</label>
-      <select id="plRole">
-        <option value="user">user</option>
-        <option value="reseller">reseller</option>
-        <option value="master">master</option>
-      </select>
-      <label>Créditos por mês</label>
-      <input type="number" id="plCredits" min="0" value="100" />
-      <label>Preço mensal (R$)</label>
-      <input type="number" id="plPrice" min="0" step="0.01" value="49.90" />
-      <label>Máx. sub-contas</label>
-      <input type="number" id="plSubs" min="0" value="0" />
-      <label><input type="checkbox" id="plResell" /> Pode revender</label>
+      <div class="plan-grid">
+        <label>Código</label><input type="text" id="plCode" pattern="[a-z][a-z0-9_]+" />
+        <label>Nome</label><input type="text" id="plName" />
+        <label>Créditos/mês</label><input type="number" id="plCredits" min="0" value="100" />
+        <label>Preço R$</label><input type="number" id="plPrice" min="0" step="0.01" value="49.90" />
+        <label>Máx. sub-contas</label><input type="number" id="plSubs" min="0" value="0" />
+      </div>
+      <p class="muted" style="font-size:0.82rem;margin:0.5rem 0 0.25rem;">Acessos do plano:</p>
+      <div class="access-chips">
+        <label class="chip"><input type="radio" name="plRole" value="user" checked /> Utilizador</label>
+        <label class="chip"><input type="radio" name="plRole" value="reseller" /> Revendedor</label>
+        <label class="chip"><input type="radio" name="plRole" value="master" /> Master</label>
+      </div>
+      <div class="access-chips">
+        <label class="chip"><input type="checkbox" id="plResell" /> Revenda</label>
+        <label class="chip"><input type="checkbox" id="plMulti" /> Várias sub-contas</label>
+      </div>
       <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.75rem;">
         <button type="button" id="plCancel" style="background:#3a3f52;color:#fff;border:0;padding:0.45rem 0.75rem;border-radius:8px;cursor:pointer;">Cancelar</button>
         <button type="button" id="plSave" style="background:#3b6df6;color:#fff;border:0;padding:0.45rem 0.75rem;border-radius:8px;cursor:pointer;font-weight:600;">Guardar</button>
@@ -374,11 +393,15 @@ header('Content-Type: text/html; charset=utf-8');
       document.getElementById('asaasKeyHint').textContent = s.asaas_api_key_set
         ? ('Chave actual: ' + (s.asaas_api_key_masked || 'definida'))
         : 'Nenhuma chave Asaas guardada.';
-      if (j.webhook_url) document.getElementById('whUrl').textContent = j.webhook_url;
+      if (j.webhook_url) {
+        const wh = document.getElementById('whUrl');
+        if (wh) wh.textContent = j.webhook_url;
+      }
+      const st = document.getElementById('payCfgStatus');
+      if (st) st.textContent = s.configured ? 'API de pagamento configurada.' : 'Ainda sem token/chave — PIX ficará em modo demonstração.';
     }
 
     async function loadFinance() {
-      if (IS_SUPER) await loadPaySettings();
       const j = await api('admin_payments_list', { limit: 80 });
       const tb = document.querySelector('#payTbl tbody');
       tb.innerHTML = '';
@@ -598,6 +621,16 @@ header('Content-Type: text/html; charset=utf-8');
     const dlgPlan = document.getElementById('dlgPlan');
     let planEditNew = false;
 
+    function getPlRole() {
+      const r = document.querySelector('input[name="plRole"]:checked');
+      return r ? r.value : 'user';
+    }
+
+    function setPlRole(role) {
+      const r = document.querySelector('input[name="plRole"][value="' + role + '"]');
+      if (r) r.checked = true;
+    }
+
     function openPlanForm(p, isNew) {
       planEditNew = isNew;
       document.getElementById('planDlgTitle').textContent = isNew ? 'Novo plano' : 'Editar plano';
@@ -605,11 +638,13 @@ header('Content-Type: text/html; charset=utf-8');
       codeEl.value = p ? p.code : '';
       codeEl.readOnly = !isNew;
       document.getElementById('plName').value = p ? p.display_name : '';
-      document.getElementById('plRole').value = p ? p.role : 'user';
+      setPlRole(p ? p.role : 'user');
       document.getElementById('plCredits').value = p ? p.monthly_credits : 100;
       document.getElementById('plPrice').value = p ? p.price_monthly : 49.9;
-      document.getElementById('plSubs').value = p ? p.max_subusers : 0;
+      const subs = p ? Number(p.max_subusers) : 0;
+      document.getElementById('plSubs').value = subs;
       document.getElementById('plResell').checked = p ? !!Number(p.can_resell) : false;
+      document.getElementById('plMulti').checked = subs > 0;
       dlgPlan.showModal();
     }
 
@@ -674,12 +709,13 @@ header('Content-Type: text/html; charset=utf-8');
       const id = 'sec-' + b.dataset.sec;
       const sec = document.getElementById(id);
       if (sec) sec.classList.add('active');
-      const map = { dash: 'Resumo', users: 'Utilizadores', tx: 'Transacções', reports: 'Relatórios', finance: 'Financeiro', tickets: 'Tickets', plans: 'Planos', audit: 'Auditoria', cfg: 'Sistema' };
+      const map = { dash: 'Resumo', users: 'Utilizadores', tx: 'Transacções', reports: 'Relatórios', finance: 'Financeiro', payments: 'Pagamentos', tickets: 'Tickets', plans: 'Planos', audit: 'Auditoria', cfg: 'Sistema' };
       title.textContent = map[b.dataset.sec] || 'Admin';
       msg('', true);
       if (b.dataset.sec === 'users') loadUsers().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'tx') loadTx().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'reports') loadReports().catch(e => msg(e.message, false));
+      if (b.dataset.sec === 'payments') loadPaySettings().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'finance') loadFinance().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'tickets') loadTkList().catch(e => msg(e.message, false));
       if (b.dataset.sec === 'plans') loadPlans().catch(e => msg(e.message, false));
@@ -754,10 +790,14 @@ header('Content-Type: text/html; charset=utf-8');
         is_new: planEditNew,
         code: document.getElementById('plCode').value.trim().toLowerCase(),
         display_name: document.getElementById('plName').value.trim(),
-        role: document.getElementById('plRole').value,
+        role: getPlRole(),
         monthly_credits: parseInt(document.getElementById('plCredits').value || '0', 10),
         price_monthly: parseFloat(document.getElementById('plPrice').value || '0'),
-        max_subusers: parseInt(document.getElementById('plSubs').value || '0', 10),
+        max_subusers: (() => {
+          let n = parseInt(document.getElementById('plSubs').value || '0', 10);
+          if (document.getElementById('plMulti').checked && n < 1) n = 50;
+          return n;
+        })(),
         can_resell: document.getElementById('plResell').checked,
       };
       try {

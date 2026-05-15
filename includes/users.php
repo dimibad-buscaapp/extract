@@ -50,9 +50,15 @@ function extractor_user_can_unlimited(): bool
  */
 function extractor_plans_list(PDO $pdo): array
 {
-    return $pdo->query(
+    $rows = $pdo->query(
         "SELECT code, display_name, role, monthly_credits, price_monthly, max_subusers, can_resell FROM plans WHERE code != 'super_master' ORDER BY monthly_credits ASC"
     )->fetchAll();
+    foreach ($rows as &$r) {
+        $r['price_formatted'] = extractor_money((float) ($r['price_monthly'] ?? 0));
+    }
+    unset($r);
+
+    return $rows;
 }
 
 function extractor_verify_recaptcha_if_configured(): void

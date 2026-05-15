@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 const EXTRACTOR_PHP_VERSION = '1.2.0';
 /** Altere quando publicar no servidor — confirme em /health.php */
-const EXTRACTOR_BUILD_ID = '2026-05-15-60d886f';
+const EXTRACTOR_BUILD_ID = '2026-05-15-9e48423-mp-brl';
 
 define('EXTRACTOR_ROOT', __DIR__);
 define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');

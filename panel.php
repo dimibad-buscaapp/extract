@@ -199,6 +199,10 @@ header('Content-Type: text/html; charset=utf-8');
     </section>
 
     <section id="sec-sites" class="sec">
+      <div class="card info-box" style="margin-bottom:0.75rem;padding:0.75rem 1rem;background:#151a28;border:1px solid #2c4058;border-radius:8px;">
+        <strong>Descoberta de links no mesmo site</strong>
+        <p class="muted" style="margin:0.35rem 0 0;font-size:0.85rem;">Ao editar um site, a opção <em>«Só listar links do mesmo site que a URL base»</em> faz com que a varredura ignore links de outros domínios (CDN, Facebook, Google, etc.) e mostre apenas ficheiros hospedados no mesmo endereço que a página inicial do curso.</p>
+      </div>
       <div class="card">
         <button type="button" class="primary" id="btnNewSite">Novo site</button>
         <table class="tbl" id="sitesTbl"><thead><tr><th>Nome</th><th>URL</th><th></th></tr></thead><tbody></tbody></table>
@@ -514,7 +518,7 @@ header('Content-Type: text/html; charset=utf-8');
       for (const p of j.plans) {
         const o = document.createElement('option');
         o.value = p.code;
-        o.textContent = p.display_name + ' — R$ ' + Number(p.price_monthly).toFixed(2);
+        o.textContent = p.display_name + ' — ' + (p.price_formatted || ('R$ ' + Number(p.price_monthly).toFixed(2).replace('.', ',')));
         sel.appendChild(o);
       }
       document.getElementById('pixOut').textContent = '';

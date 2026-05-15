@@ -328,6 +328,10 @@ try {
         $plans = $pdo->query(
             'SELECT code, display_name, role, monthly_credits, price_monthly, max_subusers, can_resell FROM plans ORDER BY monthly_credits ASC'
         )->fetchAll();
+        foreach ($plans as &$pl) {
+            $pl['price_formatted'] = extractor_money((float) ($pl['price_monthly'] ?? 0));
+        }
+        unset($pl);
         echo json_encode(['ok' => true, 'plans' => $plans]);
         exit;
     }

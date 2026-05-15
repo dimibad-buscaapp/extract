@@ -31,6 +31,25 @@ $checks['index_hero'] = [
     'detail' => 'Texto "Organize e descarregue" presente no ficheiro',
 ];
 
+$idxRaw = is_file(__DIR__ . '/index.php') ? (string) file_get_contents(__DIR__ . '/index.php') : '';
+$checks['precos_brl'] = [
+    'ok' => $idxRaw !== '' && str_contains($idxRaw, 'extractor_money') && !str_contains($idxRaw, '€'),
+    'label' => 'Preços em R$ (sem €)',
+    'detail' => str_contains($idxRaw, '€') ? 'Ainda há € no index — faça git pull' : 'OK — extractor_money()',
+];
+
+$checks['mercadopago_module'] = [
+    'ok' => is_file(__DIR__ . '/includes/mercadopago.php'),
+    'label' => 'API Mercado Pago (includes/mercadopago.php)',
+    'detail' => is_file(__DIR__ . '/includes/mercadopago.php') ? 'Presente' : 'FALTA — git pull origin main',
+];
+
+$checks['payment_settings_module'] = [
+    'ok' => is_file(__DIR__ . '/includes/payment_settings.php'),
+    'label' => 'Config pagamentos (payment_settings.php)',
+    'detail' => is_file(__DIR__ . '/includes/payment_settings.php') ? 'Presente' : 'FALTA — git pull',
+];
+
 $checks['config'] = [
     'ok' => extractor_config_exists(),
     'label' => 'config.local.php',
