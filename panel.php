@@ -170,6 +170,13 @@ header('Content-Type: text/html; charset=utf-8');
     textarea { min-height:6rem; font-family:ui-monospace, monospace; font-size:0.82rem; }
     button.primary { margin-top:0.75rem; padding:0.5rem 0.85rem; border:0; border-radius:8px; background:#3b6df6; color:#fff; font-weight:600; cursor:pointer; }
     button.secondary { margin-top:0.5rem; margin-right:0.35rem; padding:0.4rem 0.65rem; border:0; border-radius:8px; background:#3a3f52; color:#fff; cursor:pointer; }
+    button.secondary.force-filt.active,
+    button.force-filt.active {
+      border:1px solid #9a5565;
+      background:#3a282c;
+      color:#fde8ea;
+      font-weight:600;
+    }
     .muted { color:#9aa3b2; font-size:0.85rem; }
     .ok { color:#8fd68f; }
     .err { color:#ff8a8a; }
@@ -202,6 +209,8 @@ header('Content-Type: text/html; charset=utf-8');
       <div>Créditos: <strong id="sidebarCredits"><?= (int) $meCredits ?></strong></div>
     </div>
     <nav>
+      <button type="button" data-sec="master">Master Extrator</button>
+      <button type="button" data-sec="force">Descoberta Forçada</button>
       <button type="button" class="active" data-sec="extract">Extrator</button>
       <button type="button" data-sec="sites">Sites</button>
       <button type="button" data-sec="lib">Biblioteca</button>
@@ -220,6 +229,69 @@ header('Content-Type: text/html; charset=utf-8');
     <?php if (is_array($flash ?? null)): ?>
       <p class="<?= ($flash['type'] ?? '') === 'ok' ? 'ok' : 'err' ?>"><?= h((string) ($flash['msg'] ?? '')) ?></p>
     <?php endif; ?>
+
+    <section id="sec-master" class="sec">
+      <div class="card">
+        <p class="muted" style="margin-top:0;">Rastreio em <strong>profundidade</strong> apenas no mesmo domínio da URL de conteúdo do site (PHP/cURL no VPS). Reutiliza o <strong>cookie</strong> do cadastro. Detecta links para ficheiros, Google&nbsp;Drive, Mega, MediaFire, etc. e guarda histórico na base local.</p>
+        <label>Site</label>
+        <select id="masterSite"></select>
+        <label>Máx. páginas HTML (1–400)</label>
+        <input type="number" id="masterMaxPages" min="1" max="400" value="80" />
+        <label>Profundidade de links internos (0–6)</label>
+        <input type="number" id="masterMaxDepth" min="0" max="6" value="2" />
+        <button type="button" class="primary" id="btnMasterScan">Executar varredura Master</button>
+        <p class="muted" id="masterScanStatus">—</p>
+        <div id="masterProgressWrap" class="progress" style="display:none;margin-top:0.65rem;"><div class="bar" id="masterBar" style="width:0%;"></div></div>
+        <p class="muted" style="font-size:0.8rem;margin-top:0.35rem;">Progresso em tempo real: o pedido de varredura corre noutra ligação ao servidor; os créditos são debitados ao reservar (ver <code>credits_per_master_scan</code> no config).</p>
+        <div id="masterStats" style="display:none;margin-top:0.75rem;font-size:0.88rem;"></div>
+        <h2 style="margin:1rem 0 0.5rem;font-size:1rem;">Últimas execuções</h2>
+        <table class="tbl" id="masterRunsTbl">
+          <thead><tr><th>ID</th><th>Data</th><th>Estado</th><th>Págs.</th><th>Itens</th><th>Site</th><th>Erro</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <h2 style="margin:1rem 0 0.5rem;font-size:1rem;">Resultados</h2>
+        <p class="muted" style="font-size:0.82rem;margin:0 0 0.35rem;">Clique numa linha em «Últimas execuções» para carregar os itens (ou após uma varredura concluída).</p>
+        <div style="max-height:min(50vh,22rem);overflow:auto;">
+          <table class="tbl" id="masterItemsTbl">
+            <thead><tr><th>Nome</th><th>Serviço</th><th>Tipo</th><th>URL</th><th>Dica download</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-force" class="sec">
+      <div class="card">
+        <p class="muted" style="margin-top:0;"><strong>Modo pesado:</strong> rastreio BFS amplíssimo apenas no mesmo host da URL do site — sem controlo de páginas/profundidade na UI — com um <strong>teto interno (~65k páginas / nível 512)</strong> contra loops e esgotamento do servidor em IIS/PHP.</p>
+        <p class="muted">Recolhe <strong>href/iframes/scripts</strong>, tenta extrair URLs só em <strong>JavaScript</strong> (marca <code>needs_inspection</code> com troço de script), executa <strong>POST</strong> de formulários com campos recolhidos e regista respostas em <code>master_force_attempts</code>. Créditos: <code>credits_per_force_scan</code> (por omissão igual ao Master).</p>
+        <label>Site</label>
+        <select id="forceSite"></select>
+        <button type="button" class="primary" id="btnForceScan" style="background:linear-gradient(145deg,#4a1e28,#a33);border:0;">Iniciar Descoberta Forçada</button>
+        <p class="muted" id="forceScanStatus">—</p>
+        <div id="forceProgressWrap" class="progress" style="display:none;margin-top:0.65rem;"><div class="bar" id="forceBar" style="width:0%;"></div></div>
+        <h2 style="margin:1rem 0 0.5rem;font-size:1rem;">Últimas execuções (forçada)</h2>
+        <table class="tbl" id="forceRunsTbl">
+          <thead><tr><th>ID</th><th>Data</th><th>Estado</th><th>Págs.</th><th>Reg.</th><th>Tecto pág./prof.</th><th>Site</th><th>Erro</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <h2 style="margin:1rem 0 0.5rem;font-size:1rem;">Resultados</h2>
+        <p class="muted" style="font-size:0.82rem;margin:0 0 0.35rem;">Clique numa execução acima. Filtre por tipo; «Inspeccionar» mostra contexto JS quando o URL veio inferido de script. Lista carregada limitada a 8000 registos por pedido (consulte a base para runs muito grandes).</p>
+        <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin:0.5rem 0;" id="forceFilterBtns">
+          <button type="button" class="secondary force-filt active" data-fk="direct">Directos / suspeitos</button>
+          <button type="button" class="secondary force-filt" data-fk="external">Externos / hospedagens</button>
+          <button type="button" class="secondary force-filt" data-fk="forms">POST / formulários</button>
+          <button type="button" class="secondary force-filt" data-fk="pending">Inspeccionar (JS)</button>
+        </div>
+        <p class="muted" style="font-size:0.8rem;margin:0.25rem 0;">Resumo da última execução concluída: <span id="forceByKind">—</span></p>
+        <button type="button" class="secondary" id="btnForceCopyExternal" style="display:none;">Copiar URLs externas / hospedagens</button>
+        <div style="max-height:min(50vh,24rem);overflow:auto;">
+          <table class="tbl" id="forceItemsTbl">
+            <thead><tr><th>Tipo</th><th>Kind</th><th>URL / acção</th><th>Dica / POST</th><th>JS / notas</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
     <section id="sec-extract" class="sec active">
       <div class="card">
@@ -269,7 +341,7 @@ header('Content-Type: text/html; charset=utf-8');
       </div>
       <div class="card">
         <h2 style="margin-top:0;">Listas guardadas</h2>
-        <p class="muted" style="margin:0 0 0.5rem;"><strong>M3U</strong> = original · <strong>Catálogo</strong> = todo o conteúdo · <strong>Nova M3U</strong> = lista aberta sem filtro · <strong>Converter</strong> = formato player (grupos)</p>
+        <p class="muted" style="margin:0 0 0.5rem;"><strong>M3U</strong> = original · <strong>Analisar</strong> = categorias via API (igual Litoral Flix) · <strong>Converter</strong> = M3U nova só com player_api.php (1117 canais · 25938 filmes · 7960 séries)</p>
         <button type="button" class="secondary" id="btnRefreshM3u">Actualizar</button>
         <table class="tbl" id="m3uTbl" style="margin-top:0.5rem;">
           <thead><tr><th>Nome</th><th>Tamanho</th><th>Itens</th><th>Acções</th></tr></thead>
@@ -402,6 +474,17 @@ header('Content-Type: text/html; charset=utf-8');
     </div>
   </dialog>
 
+  <dialog id="dlgForceUrls">
+    <div class="dlg-body" style="min-width:min(92vw,36rem);">
+      <h2 style="margin-top:0;">URLs externas / hospedagens</h2>
+      <textarea id="forceUrlsTa" readonly style="min-height:14rem;"></textarea>
+      <div class="dlg-actions">
+        <button type="button" class="secondary" id="dlgForceUrlsClose">Fechar</button>
+        <button type="button" class="primary" id="dlgForceUrlsCopy">Copiar</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="dlgCatalog">
     <div class="dlg-body" style="max-width:42rem;width:calc(100% - 2rem);">
       <h2 id="catDlgTitle" style="margin-top:0;">Catálogo</h2>
@@ -447,11 +530,27 @@ header('Content-Type: text/html; charset=utf-8');
     </div>
   </dialog>
 
+  <dialog id="dlgM3uAnalyze">
+    <div class="dlg-body" style="min-width:min(92vw,42rem);max-width:48rem;">
+      <h2 id="m3uAnalyzeTitle" style="margin-top:0;">Categorias da lista</h2>
+      <p class="muted" id="m3uAnalyzeMeta" style="font-size:0.85rem;">—</p>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;margin-top:0.75rem;">
+        <div><strong>Canais</strong><div id="m3uAnalyzeLive" class="muted" style="max-height:12rem;overflow:auto;font-size:0.82rem;margin-top:0.35rem;"></div></div>
+        <div><strong>Filmes</strong><div id="m3uAnalyzeMovie" class="muted" style="max-height:12rem;overflow:auto;font-size:0.82rem;margin-top:0.35rem;"></div></div>
+        <div><strong>Séries</strong><div id="m3uAnalyzeSeries" class="muted" style="max-height:12rem;overflow:auto;font-size:0.82rem;margin-top:0.35rem;"></div></div>
+      </div>
+      <div class="dlg-actions" style="margin-top:0.75rem;">
+        <button type="button" class="secondary" id="m3uAnalyzeClose">Fechar</button>
+      </div>
+    </div>
+  </dialog>
+
   <script>
     const CSRF = <?= json_encode($csrf, JSON_THROW_ON_ERROR) ?>;
     const M3U_HIGHLIGHT = <?= json_encode($m3uHighlight, JSON_THROW_ON_ERROR) ?>;
     const API_URL = <?= json_encode(extractor_url('api.php'), JSON_THROW_ON_ERROR) ?>;
     const DOWNLOAD_URL = <?= json_encode(extractor_url('download.php'), JSON_THROW_ON_ERROR) ?>;
+    const IS_SUPER = <?= json_encode($meRole === 'super_master', JSON_THROW_ON_ERROR) ?>;
     const api = async (action, extra = {}) => {
       const r = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, csrf: CSRF, ...extra }) });
       const t = await r.text();
@@ -472,8 +571,16 @@ header('Content-Type: text/html; charset=utf-8');
       const id = 'sec-' + b.dataset.sec;
       const el = document.getElementById(id);
       if (el) el.classList.add('active');
-      const map = { extract:'Extrator', sites:'Sites', lib:'Biblioteca', tools:'M3U / Xtream', support:'Suporte', shop:'PIX / Planos', account:'Conta' };
+      const map = { master:'Master Extrator', force:'Descoberta Forçada', extract:'Extrator', sites:'Sites', lib:'Biblioteca', tools:'M3U / Xtream', support:'Suporte', shop:'PIX / Planos', account:'Conta' };
       title.textContent = map[b.dataset.sec] || 'Extrator';
+      if (b.dataset.sec === 'master') {
+        stopMasterPoll();
+        loadMasterRuns().catch(e => alert(e.message));
+      }
+      if (b.dataset.sec === 'force') {
+        stopForcePoll();
+        loadForceRuns().catch(e => alert(e.message));
+      }
       if (b.dataset.sec === 'sites') loadSites();
       if (b.dataset.sec === 'lib') loadLib();
       if (b.dataset.sec === 'tools') loadM3uList().catch(e => alert(e.message));
@@ -490,7 +597,11 @@ header('Content-Type: text/html; charset=utf-8');
       const tb = document.querySelector('#sitesTbl tbody');
       tb.innerHTML = '';
       const sel = document.getElementById('exSite');
+      const masterSel = document.getElementById('masterSite');
+      const forceSel = document.getElementById('forceSite');
       sel.innerHTML = '';
+      if (masterSel) masterSel.innerHTML = '';
+      if (forceSel) forceSel.innerHTML = '';
       for (const s of j.sites) {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.base_url)}</td><td><button data-e="${s.id}">Editar</button> <button data-d="${s.id}">Apagar</button></td>`;
@@ -500,8 +611,482 @@ header('Content-Type: text/html; charset=utf-8');
         const o = document.createElement('option');
         o.value = s.id; o.textContent = s.name;
         sel.appendChild(o);
+        if (masterSel) {
+          const om = document.createElement('option');
+          om.value = s.id; om.textContent = s.name;
+          masterSel.appendChild(om);
+        }
+        if (forceSel) {
+          const of = document.createElement('option');
+          of.value = s.id; of.textContent = s.name;
+          forceSel.appendChild(of);
+        }
       }
     }
+
+    function fmtRunDate(ts) {
+      const n = Number(ts);
+      if (!n) return '—';
+      return new Date(n * 1000).toLocaleString('pt-BR');
+    }
+
+    function renderMasterStats(byService) {
+      const el = document.getElementById('masterStats');
+      if (!el) return;
+      const entries = Object.entries(byService || {});
+      if (!entries.length) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.innerHTML = '<strong>Por serviço/tipo:</strong> ' + entries.map(([k, v]) => escapeHtml(k) + ': ' + String(v)).join(' · ');
+    }
+
+    function renderMasterItems(items) {
+      const tb = document.querySelector('#masterItemsTbl tbody');
+      if (!tb) return;
+      tb.innerHTML = '';
+      if (!items || !items.length) {
+        tb.innerHTML = '<tr><td colspan="5" class="muted">Nenhum item. Execute uma varredura ou escolha uma execução na tabela acima.</td></tr>';
+        return;
+      }
+      for (const it of items) {
+        const tr = document.createElement('tr');
+        const tdName = document.createElement('td');
+        tdName.textContent = (it.display_name || '—').slice(0, 120);
+        const tdSvc = document.createElement('td');
+        tdSvc.textContent = it.service || '';
+        const tdTyp = document.createElement('td');
+        tdTyp.textContent = it.type_label || '';
+        const tdUrl = document.createElement('td');
+        const aU = document.createElement('a');
+        aU.href = it.url || '#';
+        aU.target = '_blank';
+        aU.rel = 'noopener';
+        aU.textContent = 'Abrir';
+        tdUrl.appendChild(aU);
+        const tdHint = document.createElement('td');
+        const hint = (it.download_hint || it.url || '');
+        const aH = document.createElement('a');
+        aH.href = hint || '#';
+        aH.target = '_blank';
+        aH.rel = 'noopener';
+        aH.textContent = 'Dica';
+        tdHint.appendChild(aH);
+        tr.append(tdName, tdSvc, tdTyp, tdUrl, tdHint);
+        tb.appendChild(tr);
+      }
+    }
+
+    let masterPollTimer = null;
+    let masterSelectedRunId = 0;
+    let masterPollAttempts = 0;
+
+    function stopMasterPoll() {
+      if (masterPollTimer) {
+        clearInterval(masterPollTimer);
+        masterPollTimer = null;
+      }
+      masterPollAttempts = 0;
+    }
+
+    function setMasterProgress(pct, visible) {
+      const w = document.getElementById('masterProgressWrap');
+      const b = document.getElementById('masterBar');
+      if (!w || !b) return;
+      w.style.display = visible ? 'block' : 'none';
+      const p = Math.max(0, Math.min(100, Number(pct) || 0));
+      b.style.width = p + '%';
+    }
+
+    function fmtMasterStatus(s) {
+      const m = { queued: 'Fila', running: 'A correr…', done: 'OK', failed: 'Falhou' };
+      return m[s] || (s ? String(s) : 'OK');
+    }
+
+    async function loadMasterRuns() {
+      const j = await api('master_runs', { limit: 25 });
+      const tb = document.querySelector('#masterRunsTbl tbody');
+      if (!tb) return;
+      tb.innerHTML = '';
+      const runs = j.runs || [];
+      if (!runs.length) {
+        tb.innerHTML = '<tr><td colspan="7" class="muted">Nenhuma execução ainda.</td></tr>';
+        renderMasterItems([]);
+        return;
+      }
+      for (const r of runs) {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        const err = (r.error || '').slice(0, 80);
+        let siteCell = r.site_id != null ? '#' + r.site_id : '—';
+        if (IS_SUPER && r.user_id != null) {
+          siteCell += ' · u' + r.user_id;
+        }
+        const st = escapeHtml(fmtMasterStatus(r.scan_status || 'done'));
+        tr.innerHTML = `<td>${r.id}</td><td>${escapeHtml(fmtRunDate(r.created_at))}</td><td>${st}</td><td>${r.pages_crawled ?? 0}</td><td>${r.items_found ?? 0}</td><td>${escapeHtml(siteCell)}</td><td class="muted" style="font-size:0.8rem;">${escapeHtml(err || '—')}</td>`;
+        tr.addEventListener('click', async () => {
+          masterSelectedRunId = Number(r.id);
+          document.querySelectorAll('#masterRunsTbl tbody tr').forEach(x => { x.style.background = ''; });
+          tr.style.background = 'rgba(59,109,246,0.12)';
+          try {
+            const ji = await api('master_run_items', { run_id: masterSelectedRunId });
+            renderMasterItems(ji.items || []);
+          } catch (e) { alert(e.message); }
+        });
+        tb.appendChild(tr);
+      }
+    }
+
+    document.getElementById('btnMasterScan').addEventListener('click', async () => {
+      const siteId = parseInt(document.getElementById('masterSite').value || '0', 10);
+      if (!siteId) { alert('Cadastre e seleccione um site.'); return; }
+      const max_pages = Math.min(400, Math.max(1, parseInt(document.getElementById('masterMaxPages').value || '80', 10)));
+      const max_depth = Math.min(6, Math.max(0, parseInt(document.getElementById('masterMaxDepth').value || '2', 10)));
+      const st = document.getElementById('masterScanStatus');
+      const btn = document.getElementById('btnMasterScan');
+
+      stopMasterPoll();
+      btn.disabled = true;
+      setMasterProgress(0, true);
+      document.getElementById('masterStats').style.display = 'none';
+      st.textContent = 'A reservar execução…';
+
+      try {
+        const res = await api('master_scan_reserve', { site_id: siteId, max_pages, max_depth });
+        const runId = Number(res.run_id) || 0;
+        if (!runId) throw new Error('run_id inválido');
+        masterSelectedRunId = runId;
+        st.textContent = 'Execução #' + runId + ' — a iniciar em segundo plano…';
+
+        const tick = async () => {
+          try {
+            masterPollAttempts++;
+            if (masterPollAttempts > 500) {
+              stopMasterPoll();
+              st.textContent = 'Demasiado tempo em «Fila» ou «A correr». Recarregue a página ou execute de novo — veja também a última execução na tabela.';
+              setMasterProgress(0, false);
+              btn.disabled = false;
+              await loadMasterRuns();
+              return;
+            }
+            const p = await api('master_scan_progress', { run_id: runId });
+            setMasterProgress(p.progress_pct ?? 0, true);
+            const state = (p.scan_status || '') + '';
+            let line = (p.progress_msg || '') + '';
+            if (state === 'queued') line = (line || 'Na fila…');
+            st.textContent = line + ' [' + fmtMasterStatus(state) + ']';
+
+            if (state === 'done') {
+              stopMasterPoll();
+              renderMasterStats(p.by_service || {});
+              const ji = await api('master_run_items', { run_id: runId });
+              renderMasterItems(ji.items || []);
+              await loadMasterRuns();
+              setMasterProgress(100, true);
+              st.textContent = 'Concluído: ' + (p.items_found ?? 0) + ' itens (execução #' + runId + ').';
+              btn.disabled = false;
+              return;
+            }
+            if (state === 'failed') {
+              stopMasterPoll();
+              st.textContent = 'Falhou: ' + (p.error || '—');
+              setMasterProgress(0, false);
+              btn.disabled = false;
+              await loadMasterRuns();
+            }
+          } catch (e) {
+            stopMasterPoll();
+            st.textContent = 'Erro ao consultar progresso: ' + e.message;
+            setMasterProgress(0, false);
+            btn.disabled = false;
+          }
+        };
+
+        masterPollAttempts = 0;
+        masterPollTimer = setInterval(tick, 1200);
+        tick();
+
+        fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'master_scan_execute', csrf: CSRF, run_id: runId }),
+        }).then(async (r) => {
+          const t = await r.text();
+          let j;
+          try { j = JSON.parse(t); } catch { throw new Error(t.slice(0, 200)); }
+          if (!j.ok) throw new Error(j.error || 'exec');
+        }).catch((err) => console.error('[master_scan_execute]', err));
+      } catch (e) {
+        stopMasterPoll();
+        st.textContent = 'Erro: ' + e.message;
+        setMasterProgress(0, false);
+        btn.disabled = false;
+      }
+    });
+
+    /* Descoberta Forçada */
+    let forcePollTimer = null;
+    let forcePollAttempts = 0;
+    let forceSelectedRunId = 0;
+    /** @type {any[]} */
+    let forceItemsCache = [];
+    let forceActiveFilter = 'direct';
+
+    function stopForcePoll() {
+      if (forcePollTimer) {
+        clearInterval(forcePollTimer);
+        forcePollTimer = null;
+      }
+      forcePollAttempts = 0;
+    }
+
+    function setForceProgress(pct, visible) {
+      const w = document.getElementById('forceProgressWrap');
+      const b = document.getElementById('forceBar');
+      if (!w || !b) return;
+      w.style.display = visible ? 'block' : 'none';
+      const p = Math.max(0, Math.min(100, Number(pct) || 0));
+      b.style.width = p + '%';
+    }
+
+    function forceItemMatchesFilter(it, fk) {
+      const k = it.kind || '';
+      if (fk === 'direct') return k === 'direct_download' || k === 'suspected_download';
+      if (fk === 'external') return k === 'external_service' || k === 'external_link';
+      if (fk === 'forms') return k === 'form_post';
+      if (fk === 'pending') return k === 'needs_inspection';
+      return true;
+    }
+
+    function renderForceByKindSummary(obj) {
+      const el = document.getElementById('forceByKind');
+      if (!el) return;
+      const e = obj || {};
+      const parts = Object.entries(e).map(([a, v]) => escapeHtml(a) + ': ' + String(v));
+      el.innerHTML = parts.length ? parts.join(' · ') : '—';
+    }
+
+    function renderForceItems() {
+      const tb = document.querySelector('#forceItemsTbl tbody');
+      if (!tb) return;
+      tb.innerHTML = '';
+      const fk = forceActiveFilter;
+      const rows = (forceItemsCache || []).filter(it => forceItemMatchesFilter(it, fk));
+      const btnExt = document.getElementById('btnForceCopyExternal');
+      if (btnExt) btnExt.style.display = fk === 'external' && rows.length ? 'inline-block' : 'none';
+
+      if (!rows.length) {
+        tb.innerHTML = '<tr><td colspan="5" class="muted">Nada neste filtro.</td></tr>';
+        return;
+      }
+      for (const it of rows) {
+        const tr = document.createElement('tr');
+        const postStr = (it.post_data && String(it.post_data).length) ? String(it.post_data).slice(0, 400) : '';
+        const hint = (it.download_hint || '').slice(0, 500);
+        const js = (it.js_context || '').slice(0, 800);
+
+        const tdExt = document.createElement('td');
+        tdExt.textContent = it.external_service ? String(it.external_service) : '—';
+
+        const tdKind = document.createElement('td');
+        const code = document.createElement('code');
+        code.style.fontSize = '0.76rem';
+        code.textContent = it.kind || '';
+        tdKind.appendChild(code);
+
+        const tdUrl = document.createElement('td');
+        const a = document.createElement('a');
+        a.href = it.url || '#';
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'Abrir';
+        tdUrl.appendChild(a);
+
+        const tdHint = document.createElement('td');
+        tdHint.className = 'muted';
+        tdHint.style.fontSize = '0.82rem';
+        tdHint.style.maxWidth = '14rem';
+        tdHint.textContent = postStr || hint || '—';
+
+        const tdJs = document.createElement('td');
+        tdJs.className = 'muted';
+        tdJs.style.fontSize = '0.76rem';
+        tdJs.style.maxWidth = '12rem';
+        tdJs.textContent = js || '—';
+
+        tr.append(tdExt, tdKind, tdUrl, tdHint, tdJs);
+        tb.appendChild(tr);
+      }
+    }
+
+    async function loadForceItemsForRun(runId) {
+      const ji = await api('master_force_items', { run_id: runId });
+      forceItemsCache = ji.items || [];
+      renderForceItems();
+    }
+
+    async function loadForceRuns() {
+      const j = await api('master_force_runs', { limit: 25 });
+      const tb = document.querySelector('#forceRunsTbl tbody');
+      if (!tb) return;
+      tb.innerHTML = '';
+      const runs = j.runs || [];
+      if (!runs.length) {
+        tb.innerHTML = '<tr><td colspan="8" class="muted">Nenhuma execução forçada ainda.</td></tr>';
+        forceItemsCache = [];
+        renderForceItems();
+        renderForceByKindSummary(null);
+        return;
+      }
+      for (const r of runs) {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        const err = (r.error || '').slice(0, 70);
+        let siteCell = r.site_id != null ? '#' + r.site_id : '—';
+        if (IS_SUPER && r.user_id != null) siteCell += ' · u' + r.user_id;
+        const st = escapeHtml(fmtMasterStatus(r.scan_status || 'done'));
+        const ceil = (r.max_pages_ceiling ?? '—') + ' / ' + (r.max_depth_ceiling ?? '—');
+        tr.innerHTML = `<td>${r.id}</td><td>${escapeHtml(fmtRunDate(r.created_at))}</td><td>${st}</td><td>${r.pages_crawled ?? 0}</td><td>${r.items_found ?? 0}</td><td class="muted">${escapeHtml(ceil)}</td><td>${escapeHtml(siteCell)}</td><td class="muted" style="font-size:0.78rem;">${escapeHtml(err || '—')}</td>`;
+        tr.addEventListener('click', async () => {
+          forceSelectedRunId = Number(r.id);
+          document.querySelectorAll('#forceRunsTbl tbody tr').forEach(x => { x.style.background = ''; });
+          tr.style.background = 'rgba(200,50,80,0.14)';
+          if (document.getElementById('btnForceCopyExternal')) {
+            document.getElementById('btnForceCopyExternal').style.display = 'none';
+          }
+          try {
+            await loadForceItemsForRun(forceSelectedRunId);
+            if ((r.scan_status || '') === 'done') {
+              const p = await api('master_force_progress', { run_id: forceSelectedRunId });
+              renderForceByKindSummary(p.by_kind || {});
+            } else {
+              renderForceByKindSummary(null);
+            }
+          } catch (e) { alert(e.message); }
+        });
+        tb.appendChild(tr);
+      }
+    }
+
+    document.querySelectorAll('.force-filt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.force-filt').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        forceActiveFilter = btn.getAttribute('data-fk') || 'direct';
+        renderForceItems();
+      });
+    });
+
+    const dlgForceUrls = document.getElementById('dlgForceUrls');
+    document.getElementById('dlgForceUrlsClose').addEventListener('click', () => dlgForceUrls.close());
+    document.getElementById('dlgForceUrlsCopy').addEventListener('click', async () => {
+      const ta = document.getElementById('forceUrlsTa');
+      try {
+        ta.select();
+        await navigator.clipboard.writeText(ta.value);
+      } catch {
+        document.execCommand('copy');
+      }
+    });
+
+    document.getElementById('btnForceCopyExternal').addEventListener('click', () => {
+      const lines = [];
+      for (const it of forceItemsCache) {
+        const k = it.kind || '';
+        if (k === 'external_service' || k === 'external_link') {
+          const hint = (it.download_hint || '').trim();
+          const u = it.url || '';
+          lines.push(u + (hint && hint !== u ? '\n  ' + hint : ''));
+        }
+      }
+      document.getElementById('forceUrlsTa').value = lines.join('\n\n');
+      dlgForceUrls.showModal();
+    });
+
+    document.getElementById('btnForceScan').addEventListener('click', async () => {
+      const siteId = parseInt(document.getElementById('forceSite').value || '0', 10);
+      if (!siteId) { alert('Cadastre e seleccione um site.'); return; }
+      const st = document.getElementById('forceScanStatus');
+      const btn = document.getElementById('btnForceScan');
+      stopForcePoll();
+      btn.disabled = true;
+      setForceProgress(0, true);
+      st.textContent = 'A reservar descoberta forçada…';
+
+      try {
+        const res = await api('master_force_reserve', { site_id: siteId });
+        const runId = Number(res.run_id) || 0;
+        if (!runId) throw new Error('run_id inválido');
+        forceSelectedRunId = runId;
+        st.textContent = 'Execução forçada #' + runId + ' — a iniciar em segundo plano…';
+
+        const tick = async () => {
+          try {
+            forcePollAttempts++;
+            if (forcePollAttempts > 800) {
+              stopForcePoll();
+              st.textContent = 'Tempo de espera elevado. Consulte a tabela de execuções ou recarregue.';
+              setForceProgress(0, false);
+              btn.disabled = false;
+              await loadForceRuns();
+              return;
+            }
+            const p = await api('master_force_progress', { run_id: runId });
+            setForceProgress(p.progress_pct ?? 0, true);
+            const state = (p.scan_status || '') + '';
+            let line = (p.progress_msg || '') + '';
+            if (state === 'queued') line = (line || 'Na fila…');
+            st.textContent = line + ' [' + fmtMasterStatus(state) + ']';
+
+            if (state === 'done') {
+              stopForcePoll();
+              renderForceByKindSummary(p.by_kind || {});
+              await loadForceItemsForRun(runId);
+              await loadForceRuns();
+              setForceProgress(100, true);
+              st.textContent = 'Concluído: ' + (p.items_found ?? 0) + ' registos (#' + runId + ').';
+              btn.disabled = false;
+              return;
+            }
+            if (state === 'failed') {
+              stopForcePoll();
+              st.textContent = 'Falhou: ' + (p.error || '—');
+              setForceProgress(0, false);
+              btn.disabled = false;
+              await loadForceRuns();
+            }
+          } catch (e) {
+            stopForcePoll();
+            st.textContent = 'Erro ao consultar progresso: ' + e.message;
+            setForceProgress(0, false);
+            btn.disabled = false;
+          }
+        };
+
+        forcePollAttempts = 0;
+        forcePollTimer = setInterval(tick, 1200);
+        tick();
+
+        fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'master_force_execute', csrf: CSRF, run_id: runId }),
+        }).then(async (r) => {
+          const t = await r.text();
+          let j;
+          try { j = JSON.parse(t); } catch { throw new Error(t.slice(0, 200)); }
+          if (!j.ok) throw new Error(j.error || 'exec');
+        }).catch((err) => console.error('[master_force_execute]', err));
+      } catch (e) {
+        stopForcePoll();
+        st.textContent = 'Erro: ' + e.message;
+        setForceProgress(0, false);
+        btn.disabled = false;
+      }
+    });
+
     function escapeHtml(t){ const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
 
     const dlg = document.getElementById('dlg');
@@ -653,13 +1238,15 @@ header('Content-Type: text/html; charset=utf-8');
         aDl.textContent = 'M3U';
         actions.appendChild(aDl);
         const bCat = mkBtn('m3u-act-cat', 'Catálogo', { 'data-cat': String(p.id) });
+        const bAnal = mkBtn('m3u-act-anal', 'Analisar', { 'data-anal': String(p.id) });
         const bNova = mkBtn('m3u-act-nova', 'Nova M3U', { 'data-nova': String(p.id) });
         const bConv = mkBtn('m3u-act-conv', 'Converter', { 'data-conv': String(p.id) });
         const bDel = mkBtn('m3u-act-del', 'Apagar', { 'data-m3u-del': String(p.id) });
-        actions.append(bCat, bNova, bConv, bDel);
+        actions.append(bCat, bAnal, bNova, bConv, bDel);
         bCat.addEventListener('click', () => openCatalog(Number(p.id), p.label || p.file_name));
+        bAnal.addEventListener('click', () => openM3uAnalyze(Number(p.id), p.label || p.file_name));
         bNova.addEventListener('click', () => runM3uExportJob(Number(p.id), 'all_open', 'Nova M3U'));
-        bConv.addEventListener('click', () => runM3uExportJob(Number(p.id), 'convert', 'Converter (player)'));
+        bConv.addEventListener('click', () => runM3uExportJob(Number(p.id), 'convert', 'Converter (API Litoral Flix)'));
         bDel.addEventListener('click', async () => {
           if (!confirm('Apagar esta lista?')) return;
           try {
@@ -677,6 +1264,7 @@ header('Content-Type: text/html; charset=utf-8');
     document.getElementById('btnRefreshM3u').addEventListener('click', () => loadM3uList().catch(e => alert(e.message)));
 
     const dlgCatalog = document.getElementById('dlgCatalog');
+    const dlgM3uAnalyze = document.getElementById('dlgM3uAnalyze');
     const dlgM3uJob = document.getElementById('dlgM3uJob');
     const m3uJobBar = document.getElementById('m3uJobBar');
     const m3uJobMsg = document.getElementById('m3uJobMsg');
@@ -685,7 +1273,48 @@ header('Content-Type: text/html; charset=utf-8');
     const m3uJobDownload = document.getElementById('m3uJobDownload');
     const m3uJobClose = document.getElementById('m3uJobClose');
     document.getElementById('m3uDlgClose').addEventListener('click', () => dlgCatalog.close());
+    document.getElementById('m3uAnalyzeClose').addEventListener('click', () => dlgM3uAnalyze.close());
     m3uJobClose.addEventListener('click', () => dlgM3uJob.close());
+
+    function renderAnalyzeCol(el, items) {
+      if (!el) return;
+      if (!items || !items.length) {
+        el.innerHTML = '<div class="muted">Nenhuma categoria.</div>';
+        return;
+      }
+      el.innerHTML = items.map(c =>
+        '<div style="padding:0.15rem 0;">' + escapeHtml(c.name) +
+        ' <span style="opacity:0.65;">(' + (c.count || 0) + ')</span></div>'
+      ).join('');
+    }
+
+    async function openM3uAnalyze(id, label) {
+      document.getElementById('m3uAnalyzeTitle').textContent = 'Categorias — ' + (label || 'Lista');
+      document.getElementById('m3uAnalyzeMeta').textContent = 'A analisar…';
+      renderAnalyzeCol(document.getElementById('m3uAnalyzeLive'), []);
+      renderAnalyzeCol(document.getElementById('m3uAnalyzeMovie'), []);
+      renderAnalyzeCol(document.getElementById('m3uAnalyzeSeries'), []);
+      dlgM3uAnalyze.showModal();
+      try {
+        const j = await api('m3u_analyze', { id });
+        const c = j.categories || {};
+        renderAnalyzeCol(document.getElementById('m3uAnalyzeLive'), c.live || []);
+        renderAnalyzeCol(document.getElementById('m3uAnalyzeMovie'), c.movie || []);
+        renderAnalyzeCol(document.getElementById('m3uAnalyzeSeries'), c.series || []);
+        const n = (c.live || []).length + (c.movie || []).length + (c.series || []).length;
+        const tot = [...(c.live || []), ...(c.movie || []), ...(c.series || [])].reduce((s, x) => s + (x.count || 0), 0);
+        let meta = n + ' categorias · ' + tot + ' itens';
+        if (c.api_ok && c.counts) {
+          meta = 'API Litoral Flix: ' + (c.counts.live || 0) + ' canais · '
+            + (c.counts.movie || 0) + ' filmes · ' + (c.counts.series_shows || 0) + ' séries';
+        } else if (!c.api_ok) {
+          meta += ' (fallback M3U — use Converter com API)';
+        }
+        document.getElementById('m3uAnalyzeMeta').textContent = meta;
+      } catch (e) {
+        document.getElementById('m3uAnalyzeMeta').textContent = 'Erro: ' + e.message;
+      }
+    }
 
     function renderCatalogTable() {
       const q = (catSearchEl && catSearchEl.value || '').trim().toLowerCase();
@@ -743,7 +1372,7 @@ header('Content-Type: text/html; charset=utf-8');
       try {
         const begin = await api('m3u_export_begin', { id: playlistId, mode });
         const jobId = begin.job_id;
-        m3uJobMsg.textContent = begin.message || 'A processar…';
+        m3uJobMsg.textContent = (begin.xtream && begin.xtream.message) || begin.message || 'A processar…';
         let last;
         for (;;) {
           last = await api('m3u_export_step', { job_id: jobId });

@@ -19,6 +19,35 @@ $checks['build_id'] = [
     'detail' => $buildId,
 ];
 
+$panelPhp = is_file(__DIR__ . '/panel.php') ? (string) file_get_contents(__DIR__ . '/panel.php') : '';
+$apiPhp = is_file(__DIR__ . '/api.php') ? (string) file_get_contents(__DIR__ . '/api.php') : '';
+$masterExtratorOk = is_file(__DIR__ . '/includes/master_extractor.php')
+    && str_contains($panelPhp, 'id="sec-master"')
+    && str_contains($panelPhp, 'master_scan_reserve')
+    && str_contains($apiPhp, 'master_scan_reserve')
+    && str_contains($apiPhp, 'master_extractor.php');
+$checks['master_extrator_deploy'] = [
+    'ok' => $masterExtratorOk,
+    'label' => 'Master Extrator (painel + API)',
+    'detail' => $masterExtratorOk
+        ? 'OK — botão Master Extrator, sec-master e endpoints API presentes.'
+        : 'Em FALHA: copie do projecto actual — includes/master_extractor.php, panel.php, api.php, bootstrap.php e includes/db.php (tabelas/colunas master_scan_*). Ou faça git pull na pasta física correcta do site no IIS.',
+];
+
+$forceOk = is_file(__DIR__ . '/includes/master_force.php')
+    && is_file(__DIR__ . '/includes/master_force_helpers.php')
+    && str_contains($panelPhp, 'id="sec-force"')
+    && str_contains($panelPhp, 'master_force_reserve')
+    && str_contains($apiPhp, 'master_force_reserve')
+    && str_contains($apiPhp, 'master_force.php');
+$checks['force_discovery_deploy'] = [
+    'ok' => $forceOk,
+    'label' => 'Descoberta Forçada',
+    'detail' => $forceOk
+        ? 'OK — includes/master_force*.php, sec-force e endpoints API.'
+        : 'Em FALHA: atualize panel.php, api.php, includes/db.php, includes/master_force.php e helpers.',
+];
+
 $checks['urls_helper'] = [
     'ok' => function_exists('extractor_url'),
     'label' => 'Helper extractor_url (includes/urls.php)',

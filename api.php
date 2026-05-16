@@ -9,6 +9,8 @@ require_once __DIR__ . '/includes/discover.php';
 require_once __DIR__ . '/includes/users.php';
 require_once __DIR__ . '/includes/m3u.php';
 require_once __DIR__ . '/includes/m3u_export_job.php';
+require_once __DIR__ . '/includes/master_extractor.php';
+require_once __DIR__ . '/includes/master_force.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -79,6 +81,10 @@ try {
         $user = trim((string) ($input['username'] ?? ''));
         $pass = (string) ($input['password'] ?? '');
         $cookie = trim((string) ($input['cookie'] ?? ''));
+        $same = filter_var(
+            $input['same_origin_only'] ?? $input['same'] ?? false,
+            FILTER_VALIDATE_BOOLEAN
+        );
         if ($name === '' || $base === '') {
             throw new RuntimeException('Nome e URL base são obrigatórios');
         }
@@ -119,7 +125,7 @@ try {
                 $user !== '' ? $user : null,
                 $pwEnc,
                 $ckEnc,
-                0,
+                $same ? 1 : 0,
                 $id,
             ]);
             echo json_encode(['ok' => true, 'id' => $id]);
@@ -140,6 +146,172 @@ try {
             $nid = (int) $pdo->lastInsertId();
             echo json_encode(['ok' => true, 'id' => $nid]);
         }
+        exit;
+    }
+
+    if ($action === 'master_scan_reserve') {
+        $siteId = (int) ($input['site_id'] ?? 0);
+        $maxPages = (int) ($input['max_pages'] ?? 80);
+        $maxDepth = (int) ($input['max_depth'] ?? 2);
+        if ($siteId < 1) {
+            throw new RuntimeException('site_id inválido');
+        }
+        $reserved = extractor_master_insert_queued_run($pdo, $uid, $siteId, $maxPages, $maxDepth, $super);
+        if (!$reserved['ok']) {
+            throw new RuntimeException((string) ($reserved['error'] ?? 'Não foi possível criar a varredura'));
+        }
+        $runId = (int) $reserved['run_id'];
+        $cost = (int) ($cfg['credits_per_master_scan'] ?? 0);
+        if ($cost > 0 && !extractor_credit_try_debit($pdo, $uid, $cost, 'Varredura Master (#' . $runId . ')')) {
+            $pdo->prepare('DELETE FROM master_scan_runs WHERE id = ?')->execute([$runId]);
+            throw new RuntimeException('Créditos insuficientes para a varredura Master.');
+        }
+        echo json_encode([
+            'ok' => true,
+            'run_id' => $runId,
+            'credits' => (int) ($_SESSION['user_credits'] ?? 0),
+        ]);
+        exit;
+    }
+
+    if ($action === 'master_scan_execute') {
+        $runId = (int) ($input['run_id'] ?? 0);
+        if ($runId < 1) {
+            throw new RuntimeException('run_id inválido');
+        }
+        if ($super) {
+            $chk = $pdo->prepare('SELECT id FROM master_scan_runs WHERE id = ?');
+            $chk->execute([$runId]);
+        } else {
+            $chk = $pdo->prepare('SELECT id FROM master_scan_runs WHERE id = ? AND user_id = ?');
+            $chk->execute([$runId, $uid]);
+        }
+        if (!$chk->fetch()) {
+            throw new RuntimeException('Execução não encontrada');
+        }
+        session_write_close();
+        $r = extractor_master_execute_run($pdo, $runId, $uid, $super);
+        if (!$r['ok']) {
+            throw new RuntimeException((string) ($r['error'] ?? 'Execução falhou'));
+        }
+        echo json_encode([
+            'ok' => true,
+            'skipped' => (bool) ($r['skipped'] ?? false),
+        ]);
+        exit;
+    }
+
+    if ($action === 'master_scan_progress') {
+        $runId = (int) ($input['run_id'] ?? 0);
+        if ($runId < 1) {
+            throw new RuntimeException('run_id inválido');
+        }
+        $snap = extractor_master_run_progress_snapshot($pdo, $runId, $uid, $super);
+        if (!empty($snap['forbidden'])) {
+            throw new RuntimeException((string) $snap['forbidden']);
+        }
+        unset($snap['forbidden']);
+        echo json_encode(['ok' => true] + $snap + ['credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'master_runs') {
+        $lim = min(50, max(1, (int) ($input['limit'] ?? 20)));
+        $runs = extractor_master_list_runs($pdo, $uid, $super, $lim);
+        echo json_encode(['ok' => true, 'runs' => $runs, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'master_run_items') {
+        $runId = (int) ($input['run_id'] ?? 0);
+        if ($runId < 1) {
+            throw new RuntimeException('run_id inválido');
+        }
+        $items = extractor_master_items_for_run($pdo, $uid, $runId, $super);
+        echo json_encode(['ok' => true, 'items' => $items, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'master_force_reserve') {
+        $siteId = (int) ($input['site_id'] ?? 0);
+        if ($siteId < 1) {
+            throw new RuntimeException('site_id inválido');
+        }
+        $reserved = extractor_force_insert_queued_run($pdo, $uid, $siteId, $super);
+        if (!$reserved['ok']) {
+            throw new RuntimeException((string) ($reserved['error'] ?? 'Não foi possível criar a descoberta forçada'));
+        }
+        $runId = (int) $reserved['run_id'];
+        $cost = (int) ($cfg['credits_per_force_scan'] ?? 0);
+        if ($cost > 0 && !extractor_credit_try_debit($pdo, $uid, $cost, 'Descoberta Forçada (#' . $runId . ')')) {
+            $pdo->prepare('DELETE FROM master_force_runs WHERE id = ?')->execute([$runId]);
+            throw new RuntimeException('Créditos insuficientes para a Descoberta Forçada.');
+        }
+        echo json_encode([
+            'ok' => true,
+            'run_id' => $runId,
+            'credits' => (int) ($_SESSION['user_credits'] ?? 0),
+        ]);
+        exit;
+    }
+
+    if ($action === 'master_force_execute') {
+        $runId = (int) ($input['run_id'] ?? 0);
+        if ($runId < 1) {
+            throw new RuntimeException('run_id inválido');
+        }
+        if ($super) {
+            $chk = $pdo->prepare('SELECT id FROM master_force_runs WHERE id = ?');
+            $chk->execute([$runId]);
+        } else {
+            $chk = $pdo->prepare('SELECT id FROM master_force_runs WHERE id = ? AND user_id = ?');
+            $chk->execute([$runId, $uid]);
+        }
+        if (!$chk->fetch()) {
+            throw new RuntimeException('Execução não encontrada');
+        }
+        session_write_close();
+        $r = extractor_force_execute_run($pdo, $runId, $uid, $super);
+        if (!$r['ok']) {
+            throw new RuntimeException((string) ($r['error'] ?? 'Execução falhou'));
+        }
+        echo json_encode([
+            'ok' => true,
+            'skipped' => (bool) ($r['skipped'] ?? false),
+        ]);
+        exit;
+    }
+
+    if ($action === 'master_force_progress') {
+        $runId = (int) ($input['run_id'] ?? 0);
+        if ($runId < 1) {
+            throw new RuntimeException('run_id inválido');
+        }
+        $snap = extractor_force_run_progress_snapshot($pdo, $runId, $uid, $super);
+        if (!empty($snap['forbidden'])) {
+            throw new RuntimeException((string) $snap['forbidden']);
+        }
+        unset($snap['forbidden']);
+        echo json_encode(['ok' => true] + $snap + ['credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'master_force_runs') {
+        $lim = min(50, max(1, (int) ($input['limit'] ?? 20)));
+        $runs = extractor_force_list_runs($pdo, $uid, $super, $lim);
+        echo json_encode(['ok' => true, 'runs' => $runs, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
+        exit;
+    }
+
+    if ($action === 'master_force_items') {
+        $runId = (int) ($input['run_id'] ?? 0);
+        $kindFilter = isset($input['kind']) ? trim((string) $input['kind']) : '';
+        $kindFilter = $kindFilter === '' ? null : $kindFilter;
+        if ($runId < 1) {
+            throw new RuntimeException('run_id inválido');
+        }
+        $items = extractor_force_items_for_run($pdo, $uid, $runId, $super, $kindFilter);
+        echo json_encode(['ok' => true, 'items' => $items, 'credits' => (int) ($_SESSION['user_credits'] ?? 0)]);
         exit;
     }
 
@@ -290,6 +462,18 @@ try {
         exit;
     }
 
+    if ($action === 'm3u_analyze') {
+        $id = (int) ($input['id'] ?? 0);
+        $resolved = extractor_m3u_resolve_path($pdo, $id, $uid, $super);
+        if ($resolved === null) {
+            throw new RuntimeException('Lista não encontrada.');
+        }
+        require_once __DIR__ . '/includes/m3u_panel.php';
+        $categories = extractor_m3u_analyze_categories($resolved['path']);
+        echo json_encode(['ok' => true, 'categories' => $categories]);
+        exit;
+    }
+
     if ($action === 'm3u_export_begin') {
         $id = (int) ($input['id'] ?? 0);
         $mode = (string) ($input['mode'] ?? 'all_open');
@@ -305,12 +489,16 @@ try {
         $countRow = $stCount->fetch();
         $totalHint = (int) ($countRow['entry_count'] ?? 0);
         $begin = extractor_m3u_job_begin($uid, $id, $mode, $resolved['path'], $totalHint);
-        echo json_encode([
+        $payload = [
             'ok' => true,
             'job_id' => $begin['job_id'],
             'total' => $begin['total'],
             'message' => 'Exportação iniciada',
-        ]);
+        ];
+        if (isset($begin['xtream'])) {
+            $payload['xtream'] = $begin['xtream'];
+        }
+        echo json_encode($payload);
         exit;
     }
 

@@ -23,9 +23,12 @@ return [
     'recaptcha_secret_key' => '',
     /** Créditos debitados por cada ficheiro descarregado via API (0 = grátis) */
     'credits_per_download' => 1,
-    /** Créditos por pedido de descoberta de links (0 = grátis) */
+    /** Créditos por pedido de descoberta de links (0 = grátis). */
     'credits_per_discover' => 0,
-
+    /** Créditos ao reservar cada varredura «Master Extrator» (omita para usar o mesmo valor que credits_per_discover). */
+    'credits_per_master_scan' => 0,
+    /** Créditos ao reservar «Descoberta Forçada» (omita para usar o mesmo valor que credits_per_master_scan). */
+    'credits_per_force_scan' => 0,
     /** Pagamentos: mercadopago | asaas | demo (sem API) */
     'payment_provider' => 'mercadopago',
 

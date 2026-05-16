@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/m3u.php';
+require_once __DIR__ . '/m3u_panel.php';
+
 /**
  * @return list<string>
  */
@@ -56,8 +59,9 @@ function extractor_m3u_is_series_main_category(string $part): bool
         'ação', 'acao', 'aventura', 'comédia', 'comedia', 'drama', 'terror', 'suspense', 'romance',
         'ficção científica', 'ficcao cientifica', 'sci-fi', 'fantasia', 'policial', 'guerra',
         'documentário', 'documentario', 'infantil', 'kids', 'família', 'familia',
-        'novelas', 'telenovelas', 'telenovela', 'anime', 'animes', 'dorama', 'doramas',
-        'nacionais', 'internacionais', 'legendados', 'dublados', 'variados', 'outros', 'geral',
+        'novelas', 'novelas 2', 'telenovelas', 'telenovela', 'anime', 'animes', 'dorama', 'doramas', 'doramas 2',
+        'nacionais', 'internacionais', 'legendados', 'dublados', 'variados', 'outros', 'outras produtoras',
+        'amazon prime video', 'apple tv plus', 'amc plus', 'discovery plus', 'discovery+',
         'amc', 'fx', 'syfy', 'bbc', 'national geographic',
     ];
     if (in_array($n, $exact, true)) {
@@ -67,8 +71,9 @@ function extractor_m3u_is_series_main_category(string $part): bool
     return (bool) preg_match(
         '#\b('
         . 'netflix|prime\s*video|amazon|disney|hbo|globoplay|paramount|star\+?|apple\s*tv'
-        . '|crunchyroll|discovery|pluto|amc|national\s*geographic'
+        . '|crunchyroll|discovery|pluto|amc|national\s*geographic|outras\s*produtoras'
         . '|novelas?|telenovelas?|animes?|doramas?'
+        . '|canais|24h'
         . '|ação|acao|com[eê]dias?|dramas?|terrores?|romances?|infantis?'
         . ')\b#iu',
         $p
@@ -77,6 +82,9 @@ function extractor_m3u_is_series_main_category(string $part): bool
 
 function extractor_m3u_normalize_category_label(string $part): string
 {
+    if (extractor_m3u_is_generic_group_label($part)) {
+        return '';
+    }
     $map = [
         'netflix' => 'Netflix',
         'prime video' => 'Prime Video',
@@ -95,7 +103,12 @@ function extractor_m3u_normalize_category_label(string $part): string
         'novelas' => 'Novelas',
         'telenovelas' => 'Novelas',
         'animes' => 'Anime',
-        'geral' => 'Geral',
+        'outras produtoras' => 'Outras produtoras',
+        'amazon prime video' => 'Amazon Prime Video',
+        'apple tv plus' => 'Apple TV Plus',
+        'amc plus' => 'AMC Plus',
+        'discovery plus' => 'Discovery Plus',
+        'doramas 2' => 'Doramas',
     ];
     $k = mb_strtolower(trim($part));
 
@@ -185,9 +198,31 @@ function extractor_m3u_season_folder_label(int $season): string
  */
 function extractor_m3u_series_group_title(array $categories): string
 {
-    $platform = $categories[0] ?? 'Geral';
+    $platform = $categories[0] ?? 'Sem grupo';
 
     return 'Séries / ' . $platform;
+}
+
+/**
+ * Segmento do group-title que parece nome de série/episódio (não plataforma IPTV).
+ */
+function extractor_m3u_looks_like_episode_or_show_segment(string $part): bool
+{
+    $p = trim($part);
+    if ($p === '' || extractor_m3u_is_metadata_part($p)) {
+        return true;
+    }
+    if (preg_match('/\s+A\s+S[eé]rie\b/iu', $p)) {
+        return true;
+    }
+    if (preg_match('/\b(?:temporada|season|epis[oó]dio)\b/iu', $p)) {
+        return true;
+    }
+    if (extractor_m3u_is_series_main_category($p)) {
+        return false;
+    }
+
+    return mb_strlen($p) > 38;
 }
 
 function extractor_m3u_names_match(string $a, string $b): bool
@@ -202,80 +237,36 @@ function extractor_m3u_names_match(string $a, string $b): bool
 }
 
 /**
- * Separa plataforma/género (Netflix, Ação…) do nome da série (Smallville…).
+ * Monta hierarquia de série: Séries → categoria (group-title) → série → temporada.
  *
  * @param list<string> $parts
- * @return array{show: string, categories: list<string>, season: int|null}
+ * @return array{show: string, category: string, season: int|null}
  */
-function extractor_m3u_series_path_from_group(array $parts, ?array $parsed, string $fallbackTitle): array
+function extractor_m3u_series_path_panel(array $parts, ?array $parsed, string $fallbackTitle, string $fullGroup): array
 {
-    $seriesIdx = null;
-    foreach ($parts as $i => $p) {
-        if (extractor_m3u_is_series_bucket($p)) {
-            $seriesIdx = $i;
+    $category = extractor_m3u_panel_category_label($fullGroup);
+    $seasonFromGroup = isset($parsed['season']) ? (int) $parsed['season'] : null;
+
+    foreach ($parts as $p) {
+        if (preg_match('#\b(?:temporada|season)\s*(\d{1,2})\b#iu', $p, $sm)) {
+            $seasonFromGroup = (int) $sm[1];
             break;
         }
     }
 
-    $raw = $seriesIdx !== null ? array_slice($parts, $seriesIdx + 1) : $parts;
-
-    if (count($parts) === 1 && extractor_m3u_is_series_main_category($parts[0])) {
-        $show = trim((string) ($parsed['show'] ?? ''));
-        if ($show === '') {
-            $show = trim(preg_replace(
-                '#\s*[-–—]?\s*(?:S\d{1,2}\s*E\d{1,3}|\d{1,2}x\d{1,3}|Temporada\s*\d+.*)$#iu',
-                '',
-                $fallbackTitle
-            ) ?? $fallbackTitle);
-        }
-
-        return [
-            'show' => extractor_m3u_normalize_show_name($show !== '' ? $show : 'Série'),
-            'categories' => [extractor_m3u_normalize_category_label($parts[0])],
-            'season' => isset($parsed['season']) ? (int) $parsed['season'] : null,
-        ];
-    }
-
-    $seasonFromGroup = null;
-    $candidates = [];
-
-    foreach ($raw as $p) {
-        if (extractor_m3u_is_metadata_part($p)) {
-            continue;
-        }
-        if (preg_match('#\b(?:temporada|season)\s*(\d{1,2})\b#iu', $p, $sm)) {
-            $seasonFromGroup = (int) $sm[1];
-            continue;
-        }
-        $candidates[] = $p;
-    }
-
     $show = trim((string) ($parsed['show'] ?? ''));
-    $categories = [];
-    $showParts = [];
-
-    foreach ($candidates as $p) {
-        if ($show !== '' && extractor_m3u_names_match($p, $show)) {
-            $showParts[] = $p;
-            continue;
-        }
-        if (extractor_m3u_is_series_main_category($p)) {
-            $categories[] = extractor_m3u_normalize_category_label($p);
-            continue;
-        }
-        $showParts[] = $p;
-    }
-
-    if ($show === '' && $showParts !== []) {
-        $show = (string) $showParts[array_key_last($showParts)];
-        $showParts = array_slice($showParts, 0, -1);
-    }
-
-    foreach ($showParts as $p) {
-        if (extractor_m3u_is_series_main_category($p)) {
-            $categories[] = extractor_m3u_normalize_category_label($p);
-        } elseif (!extractor_m3u_names_match($p, $show)) {
-            $categories[] = $p;
+    if ($show === '') {
+        foreach (array_reverse($parts) as $p) {
+            if (extractor_m3u_is_metadata_part($p) || extractor_m3u_is_series_bucket($p)) {
+                continue;
+            }
+            if (extractor_m3u_names_match($p, $category)) {
+                continue;
+            }
+            if (extractor_m3u_looks_like_episode_or_show_segment($p) || mb_strlen($p) > 12) {
+                $show = $p;
+                break;
+            }
         }
     }
 
@@ -290,56 +281,42 @@ function extractor_m3u_series_path_from_group(array $parts, ?array $parsed, stri
         $show = 'Série';
     }
 
-    $categories = array_values(array_unique(array_filter(
-        $categories,
-        static fn (string $c): bool => $c !== ''
-            && !extractor_m3u_names_match($c, $show)
-            && !extractor_m3u_is_metadata_part($c)
-    )));
-
-    if ($categories === []) {
-        $categories = ['Geral'];
-    }
-
     return [
         'show' => extractor_m3u_normalize_show_name($show),
-        'categories' => $categories,
+        'category' => $category,
         'season' => $seasonFromGroup,
     ];
 }
 
 /**
- * @param array{title: string, url: string, group?: string, logo?: string, kind?: string} $entry
+ * @param array{title: string, url: string, group?: string, path?: string, logo?: string, kind?: string} $entry
+ * @param array<string, 'live'|'movie'|'series'>|null $groupTypes
  * @return array{type: string, groups: list<string>, group_title: string, display_title: string, dedupe_key: string}|null
  */
-function extractor_m3u_classify_as_series(array $entry): ?array
+function extractor_m3u_classify_as_series(array $entry, ?array $groupTypes = null): ?array
 {
     $title = trim((string) ($entry['title'] ?? 'Item'));
     $url = trim((string) ($entry['url'] ?? ''));
-    $group = trim((string) ($entry['group'] ?? ''));
+    $groupEffective = extractor_m3u_entry_effective_group($entry);
+    $groupKey = extractor_m3u_panel_group_key($groupEffective);
     $kind = (string) ($entry['kind'] ?? extractor_m3u_entry_kind($url, $title));
     $u = strtolower($url);
-    $parts = extractor_m3u_split_group_path($group);
+    $parts = extractor_m3u_split_group_path($groupEffective);
 
     $parsed = extractor_m3u_parse_series_title($title);
     $isSeriesUrl = (bool) preg_match('#/(series|serie|serials?)(/|$)#', $u);
-    $hasSeriesBucket = false;
-    foreach ($parts as $p) {
-        if (extractor_m3u_is_series_bucket($p)) {
-            $hasSeriesBucket = true;
-            break;
-        }
-    }
 
-    if ($parsed === null && !$isSeriesUrl && !$hasSeriesBucket) {
+    $type = $groupTypes[$groupKey] ?? extractor_m3u_detect_content_type($url, $title, $groupKey);
+    if ($type !== 'series') {
         return null;
     }
-    if ($kind !== 'vod' && !$isSeriesUrl) {
+    if ($kind !== 'vod' && !$isSeriesUrl && $parsed === null) {
         return null;
     }
 
-    $path = extractor_m3u_series_path_from_group($parts, $parsed, $title);
+    $path = extractor_m3u_series_path_panel($parts, $parsed, $title, $groupEffective);
     $show = $path['show'];
+    $category = $path['category'];
     $season = (int) ($parsed['season'] ?? $path['season'] ?? 1);
     $episode = (int) ($parsed['episode'] ?? 0);
 
@@ -356,93 +333,76 @@ function extractor_m3u_classify_as_series(array $entry): ?array
         $season = 1;
     }
 
-    $categories = $path['categories'];
     $extgrp = array_merge(
         ['Séries'],
-        $categories,
+        [$category],
         [$show, extractor_m3u_season_folder_label($season)]
     );
 
     return [
         'type' => 'series',
         'groups' => $extgrp,
-        'group_title' => extractor_m3u_series_group_title($categories),
+        'group_title' => extractor_m3u_series_group_title([$category]),
         'display_title' => extractor_m3u_series_display_title($show, $season, $episode),
         'dedupe_key' => 's|' . md5(strtolower($show) . '|' . $season . '|' . $episode . '|' . $url),
     ];
 }
 
 /**
- * @param array{title: string, url: string, group?: string, logo?: string, kind?: string} $entry
- * @return array{type: string, groups: list<string>, display_title: string, dedupe_key: string}
+ * Classificação estilo painel M3U Aberta: tipo por grupo dominante + group-title como categoria.
+ *
+ * @param array{title: string, url: string, group?: string, path?: string, logo?: string, kind?: string} $entry
+ * @param array<string, 'live'|'movie'|'series'>|null $groupTypes
+ * @return array{type: string, groups: list<string>, group_title?: string, display_title: string, dedupe_key: string}
  */
-function extractor_m3u_classify_player(array $entry): array
+function extractor_m3u_classify_player(array $entry, ?array $groupTypes = null): array
 {
-    $series = extractor_m3u_classify_as_series($entry);
-    if ($series !== null) {
-        return $series;
-    }
-
     $title = trim((string) ($entry['title'] ?? 'Item'));
     $url = trim((string) ($entry['url'] ?? ''));
-    $group = trim((string) ($entry['group'] ?? ''));
-    $kind = (string) ($entry['kind'] ?? extractor_m3u_entry_kind($url, $title));
-    $u = strtolower($url);
-    $parts = extractor_m3u_split_group_path($group);
+    $groupEffective = extractor_m3u_entry_effective_group($entry);
+    $groupKey = extractor_m3u_panel_group_key($groupEffective);
+    $category = extractor_m3u_panel_category_label($groupEffective);
+    $parts = array_values(array_filter(
+        extractor_m3u_split_group_path($groupEffective),
+        static fn (string $p): bool => !extractor_m3u_is_generic_group_label($p)
+    ));
 
-    $movieIdx = null;
-    foreach ($parts as $i => $p) {
-        if (preg_match('#\b(filmes?|movies?|cinema)\b#iu', $p)) {
-            $movieIdx = $i;
-            break;
+    $type = $groupTypes[$groupKey] ?? extractor_m3u_detect_content_type($url, $title, $groupKey);
+
+    if ($type === 'series') {
+        $series = extractor_m3u_classify_as_series($entry, $groupTypes);
+        if ($series !== null) {
+            return $series;
         }
     }
 
-    $isMovie = $movieIdx !== null
-        || preg_match('#/(movie|movies|filme|filmes|vod)(/|$)#', $u)
-        || ($kind === 'vod' && preg_match('#\.(mp4|mkv|avi|m4v|webm)(\?|$)#i', $u) && !preg_match('#/(live|stream)/#', $u))
-        || ($kind === 'vod' && preg_match('/\b(19|20)\d{2}\b/', $title));
-
-    if ($isMovie) {
-        $middle = $movieIdx !== null ? array_slice($parts, $movieIdx + 1) : $parts;
-        $middle = array_values(array_filter($middle, static fn (string $p): bool => !extractor_m3u_is_metadata_part($p)));
-        $groups = array_merge(['Filmes'], $middle);
-        if ($title !== '' && ($middle === [] || strcasecmp((string) end($middle), $title) !== 0)) {
+    if ($type === 'movie') {
+        $groups = ['Filmes', $category];
+        if (count($parts) >= 2 && preg_match('#\b(filmes?|movies?|cinema)\b#iu', $parts[0])) {
+            $groups = $parts;
+        }
+        if ($title !== '' && strcasecmp((string) end($groups), $title) !== 0) {
             $groups[] = $title;
         }
 
         return [
             'type' => 'movie',
             'groups' => $groups,
-            'group_title' => $groups[0] . (isset($groups[1]) ? ' / ' . $groups[1] : ''),
+            'group_title' => 'Filmes / ' . $category,
             'display_title' => $title,
             'dedupe_key' => 'm|' . md5($url),
         ];
     }
 
-    $liveRoot = 'Canais ao vivo';
-    $middle = $parts;
-    $liveIdx = null;
-    foreach ($parts as $i => $p) {
-        if (preg_match('#\b(canais?|tv|live|ao\s*vivo)\b#iu', $p)) {
-            $liveIdx = $i;
-            break;
-        }
+    $groups = $parts !== [] ? $parts : [$category];
+    if (count($groups) === 1 && !preg_match('#\b(canais?|tv|live)\b#iu', $groups[0])) {
+        $groups = ['Canais', $category];
     }
-    if ($liveIdx !== null) {
-        $liveRoot = $parts[$liveIdx];
-        $middle = array_slice($parts, $liveIdx + 1);
-    } elseif ($group !== '') {
-        $liveRoot = $parts[0] ?? $group;
-        $middle = array_slice($parts, 1);
-    }
-    $middle = array_values(array_filter($middle, static fn (string $p): bool => !extractor_m3u_is_metadata_part($p)));
-    $groups = array_merge([$liveRoot], $middle);
 
     return [
         'type' => 'live',
         'groups' => $groups,
-        'group_title' => implode(' / ', array_slice($groups, 0, 2)) ?: 'Canais ao vivo',
+        'group_title' => implode(' / ', array_slice($groups, 0, 2)) ?: ('Canais / ' . $category),
         'display_title' => $title,
         'dedupe_key' => 'l|' . md5($url),
     ];
@@ -479,7 +439,7 @@ function extractor_m3u_writer_append_player($fh, array &$state, array $classifie
     $state['last'] = $path;
 
     $title = str_replace(["\r", "\n", ','], ' ', (string) $classified['display_title']);
-    $grp = str_replace('"', "'", (string) ($classified['group_title'] ?? implode(' / ', array_slice($path, 0, 2)) ?: 'Geral'));
+    $grp = str_replace('"', "'", (string) ($classified['group_title'] ?? implode(' / ', array_slice($path, 0, 2)) ?: 'Outras produtoras'));
     $logo = trim((string) ($entry['logo'] ?? ''));
     $logoAttr = $logo !== '' ? ' tvg-logo="' . str_replace('"', "'", $logo) . '"' : '';
     fwrite($fh, '#EXTINF:-1 group-title="' . $grp . '"' . $logoAttr . ',' . $title . "\n");

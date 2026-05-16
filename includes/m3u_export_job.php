@@ -3,48 +3,17 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/m3u.php';
+require_once __DIR__ . '/m3u_panel.php';
 require_once __DIR__ . '/m3u_player.php';
-
-function extractor_m3u_jobs_dir(): string
-{
-    $dir = EXTRACTOR_DATA . '/m3u_jobs';
-    if (!is_dir($dir)) {
-        mkdir($dir, 0770, true);
-    }
-
-    return $dir;
-}
+require_once __DIR__ . '/m3u_job_seen.php';
+require_once __DIR__ . '/m3u_xtream_convert.php';
+require_once __DIR__ . '/m3u_xtream_tree.php';
 
 function extractor_m3u_job_path(string $jobId): string
 {
     $safe = preg_replace('/[^a-f0-9]/', '', strtolower($jobId));
 
     return extractor_m3u_jobs_dir() . '/' . $safe . '.json';
-}
-
-function extractor_m3u_job_seen_db_path(string $jobId): string
-{
-    $safe = preg_replace('/[^a-f0-9]/', '', strtolower($jobId));
-
-    return extractor_m3u_jobs_dir() . '/' . $safe . '.seen.sqlite';
-}
-
-function extractor_m3u_job_seen_db(string $jobId): PDO
-{
-    $pdo = new PDO('sqlite:' . extractor_m3u_job_seen_db_path($jobId));
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->exec('PRAGMA journal_mode=WAL');
-    $pdo->exec('PRAGMA synchronous=NORMAL');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS seen (k TEXT PRIMARY KEY)');
-
-    return $pdo;
-}
-
-function extractor_m3u_job_seen_is_new(PDO $seenDb, string $key): bool
-{
-    $st = $seenDb->prepare('INSERT OR IGNORE INTO seen (k) VALUES (?)');
-    $st->execute([$key]);
-    return $st->rowCount() > 0;
 }
 
 /**
@@ -87,7 +56,9 @@ function extractor_m3u_job_begin(int $userId, int $playlistId, string $mode, str
     }
     $jobId = bin2hex(random_bytes(8));
     $dest = EXTRACTOR_DATA . '/job_' . $jobId . '.m3u';
-    file_put_contents($dest, "#EXTM3U\n");
+    if ($mode !== 'convert') {
+        file_put_contents($dest, "#EXTM3U\n");
+    }
     $job = [
         'job_id' => $jobId,
         'user_id' => $userId,
@@ -96,7 +67,7 @@ function extractor_m3u_job_begin(int $userId, int $playlistId, string $mode, str
         'source_path' => $sourcePath,
         'dest_path' => $dest,
         'read_state' => extractor_m3u_read_state_default(),
-        'total' => $totalHint > 0 ? $totalHint : 1,
+        'total' => 1,
         'scanned' => 0,
         'written' => 0,
         'skipped' => 0,
@@ -107,54 +78,35 @@ function extractor_m3u_job_begin(int $userId, int $playlistId, string $mode, str
         'download_url' => '',
         'playlist_new_id' => 0,
     ];
+
+    if ($mode === 'convert') {
+        set_time_limit(300);
+        $treeDb = extractor_m3u_tree_db($jobId);
+        $seenDb = extractor_m3u_job_seen_db($jobId);
+        $job['xtream'] = extractor_m3u_xtream_prepare($sourcePath, $jobId, $treeDb, $seenDb);
+        if (empty($job['xtream']['api_ok'])) {
+            @unlink(extractor_m3u_tree_db_path($jobId));
+            @unlink(extractor_m3u_job_seen_db_path($jobId));
+            throw new RuntimeException((string) ($job['xtream']['message'] ?? 'API Xtream indisponível.'));
+        }
+        $job['stats']['live'] = (int) ($job['xtream']['live'] ?? 0);
+        $job['stats']['movie'] = (int) ($job['xtream']['movie'] ?? 0);
+        $job['stats']['series'] = 0;
+        $job['written'] = $job['stats']['live'] + $job['stats']['movie'];
+        $seriesTotal = count((array) ($job['xtream']['series_ids'] ?? []));
+        $job['total'] = max(1, $seriesTotal > 0 ? $seriesTotal : 1);
+    } elseif ($totalHint > 0) {
+        $job['total'] = $totalHint;
+    }
+
     extractor_m3u_job_save($job);
 
-    return ['job_id' => $jobId, 'total' => (int) $job['total']];
-}
-
-/**
- * @param array<string, mixed> $job
- */
-function extractor_m3u_job_process_batch(array &$job, $fh, ?PDO $seenDb): bool
-{
-    $mode = (string) $job['mode'];
-    $source = (string) $job['source_path'];
-    $batchSize = $mode === 'convert' ? 2500 : 6000;
-    $readState = (array) ($job['read_state'] ?? extractor_m3u_read_state_default());
-    $chunk = extractor_m3u_read_batch($source, $readState, $batchSize, 'all');
-    $entries = $chunk['entries'];
-    $job['read_state'] = $chunk['read_state'];
-    $job['scanned'] = (int) $job['scanned'] + count($entries);
-
-    if ($entries === []) {
-        return $chunk['eof'];
+    $out = ['job_id' => $jobId, 'total' => (int) $job['total']];
+    if ($mode === 'convert') {
+        $out['xtream'] = $job['xtream'];
     }
 
-    $writerState = ['last' => (array) ($job['writer_last'] ?? [])];
-
-    foreach ($entries as $entry) {
-        if ($mode === 'convert') {
-            $classified = extractor_m3u_classify_player($entry);
-            $key = $classified['dedupe_key'];
-            if ($seenDb !== null && !extractor_m3u_job_seen_is_new($seenDb, $key)) {
-                $job['skipped'] = (int) $job['skipped'] + 1;
-                continue;
-            }
-            if (extractor_m3u_writer_append_player($fh, $writerState, $classified, $entry)) {
-                $job['written'] = (int) $job['written'] + 1;
-                $t = $classified['type'];
-                if (isset($job['stats'][$t])) {
-                    $job['stats'][$t] = (int) $job['stats'][$t] + 1;
-                }
-            }
-        } elseif (extractor_m3u_writer_append_simple($fh, $writerState, $entry)) {
-            $job['written'] = (int) $job['written'] + 1;
-        }
-    }
-
-    $job['writer_last'] = $writerState['last'];
-
-    return $chunk['eof'];
+    return $out;
 }
 
 /**
@@ -171,22 +123,47 @@ function extractor_m3u_job_step(string $jobId, int $userId, PDO $pdo): array
         throw new RuntimeException((string) $job['error']);
     }
 
+    $mode = (string) $job['mode'];
+
+    if ($mode === 'convert') {
+        $phase = (string) (($job['xtream']['phase'] ?? ''));
+        if ($phase === 'failed') {
+            throw new RuntimeException((string) ($job['xtream']['message'] ?? 'Conversão falhou.'));
+        }
+        if ($phase === 'done') {
+            return extractor_m3u_job_finish($job, $pdo);
+        }
+
+        $treeDb = extractor_m3u_tree_db($jobId);
+        $seenDb = extractor_m3u_job_seen_db($jobId);
+
+        for ($s = 0; $s < 3; $s++) {
+            extractor_m3u_xtream_job_series_step($job, $treeDb, $seenDb);
+            if (($job['xtream']['phase'] ?? '') !== 'series') {
+                break;
+            }
+        }
+        extractor_m3u_job_save($job);
+
+        if (($job['xtream']['phase'] ?? '') === 'series') {
+            return extractor_m3u_job_status_payload($job);
+        }
+
+        return extractor_m3u_job_finish($job, $pdo);
+    }
+
     $fh = fopen((string) $job['dest_path'], 'ab');
     if ($fh === false) {
         throw new RuntimeException('Não foi possível escrever o ficheiro M3U.');
     }
 
-    $seenDb = (string) $job['mode'] === 'convert' ? extractor_m3u_job_seen_db($jobId) : null;
-    $loops = (string) $job['mode'] === 'convert' ? 2 : 3;
     $fileDone = false;
-
-    for ($i = 0; $i < $loops; $i++) {
-        if (extractor_m3u_job_process_batch($job, $fh, $seenDb)) {
+    for ($i = 0; $i < 3; $i++) {
+        if (extractor_m3u_job_process_batch_open($job, $fh)) {
             $fileDone = true;
             break;
         }
     }
-
     fclose($fh);
     extractor_m3u_job_save($job);
 
@@ -198,20 +175,65 @@ function extractor_m3u_job_step(string $jobId, int $userId, PDO $pdo): array
 }
 
 /**
+ * Nova M3U aberta — leitura incremental do ficheiro.
+ *
+ * @param array<string, mixed> $job
+ */
+function extractor_m3u_job_process_batch_open(array &$job, $fh): bool
+{
+    $source = (string) $job['source_path'];
+    $readState = (array) ($job['read_state'] ?? extractor_m3u_read_state_default());
+    $chunk = extractor_m3u_read_batch($source, $readState, 6000, 'all');
+    $entries = $chunk['entries'];
+    $job['read_state'] = $chunk['read_state'];
+    $job['scanned'] = (int) $job['scanned'] + count($entries);
+
+    if ($entries === []) {
+        return $chunk['eof'];
+    }
+
+    $writerState = ['last' => (array) ($job['writer_last'] ?? [])];
+    foreach ($entries as $entry) {
+        if (is_resource($fh) && extractor_m3u_writer_append_simple($fh, $writerState, $entry)) {
+            $job['written'] = (int) $job['written'] + 1;
+        }
+    }
+    $job['writer_last'] = $writerState['last'];
+
+    return $chunk['eof'];
+}
+
+/**
  * @param array<string, mixed> $job
  * @return array<string, mixed>
  */
 function extractor_m3u_job_finish(array $job, PDO $pdo): array
 {
+    $jobId = (string) ($job['job_id'] ?? '');
+    $mode = (string) ($job['mode'] ?? '');
+
+    if ($mode === 'convert') {
+        $treeDb = extractor_m3u_tree_db($jobId);
+        $written = extractor_m3u_tree_write_m3u($treeDb, (string) $job['dest_path']);
+        $job['written'] = $written;
+        $job['stats'] = extractor_m3u_tree_stats($treeDb);
+        @unlink(extractor_m3u_tree_db_path($jobId));
+        $metaPath = (string) (($job['xtream']['series_meta_path'] ?? ''));
+        if ($metaPath !== '' && is_file($metaPath)) {
+            @unlink($metaPath);
+        }
+    }
+
     $written = (int) $job['written'];
     if ($written < 1) {
         @unlink((string) $job['dest_path']);
-        @unlink(extractor_m3u_job_seen_db_path((string) $job['job_id']));
+        @unlink(extractor_m3u_job_seen_db_path($jobId));
+        @unlink(extractor_m3u_tree_db_path($jobId));
         throw new RuntimeException('Nenhum item exportado.');
     }
-    $mode = (string) $job['mode'];
+
     $label = $mode === 'convert'
-        ? 'Player ' . date('d/m H:i')
+        ? 'Litoral Flix ' . date('d/m H:i')
         : 'Nova M3U ' . date('d/m H:i');
     $newId = extractor_m3u_register_playlist(
         $pdo,
@@ -225,7 +247,7 @@ function extractor_m3u_job_finish(array $job, PDO $pdo): array
     $job['playlist_new_id'] = $newId;
     $job['download_url'] = extractor_absolute_url('download.php?m3u_id=' . $newId);
     extractor_m3u_job_save($job);
-    @unlink(extractor_m3u_job_seen_db_path((string) $job['job_id']));
+    @unlink(extractor_m3u_job_seen_db_path($jobId));
 
     return extractor_m3u_job_status_payload($job);
 }
@@ -236,25 +258,33 @@ function extractor_m3u_job_finish(array $job, PDO $pdo): array
  */
 function extractor_m3u_job_status_payload(array $job): array
 {
+    $xt = (array) ($job['xtream'] ?? []);
     $total = max(1, (int) ($job['total'] ?? 1));
     $processed = (int) ($job['scanned'] ?? 0);
+    if (($xt['phase'] ?? '') === 'series' && !empty($xt['series_ids'])) {
+        $processed = (int) ($xt['series_offset'] ?? 0);
+        $total = max($total, count($xt['series_ids']));
+    }
     $percent = min(100, (int) round(($processed / $total) * 100));
     if (!empty($job['done'])) {
         $percent = 100;
     }
+
     $mode = (string) ($job['mode'] ?? '');
-    $msg = $mode === 'convert'
-        ? 'A organizar como player (filmes, séries, canais)…'
-        : 'A gerar M3U aberta…';
-    if (!empty($job['done'])) {
-        $msg = 'Concluído — ' . (int) $job['written'] . ' itens';
-        if ((int) ($job['skipped'] ?? 0) > 0) {
-            $msg .= ' (' . (int) $job['skipped'] . ' duplicados ignorados)';
-        }
-        if ($mode === 'convert') {
-            $st = $job['stats'] ?? [];
-            $msg .= ' · ' . (int) ($st['movie'] ?? 0) . ' filmes, ' . (int) ($st['series'] ?? 0) . ' séries, ' . (int) ($st['live'] ?? 0) . ' canais';
-        }
+    $msg = !empty($xt['message'])
+        ? (string) $xt['message']
+        : ($mode === 'convert' ? 'A converter via API Litoral Flix…' : 'A gerar M3U aberta…');
+
+    if (!empty($job['done']) && $mode === 'convert') {
+        $st = $job['stats'] ?? [];
+        $shows = (int) ($xt['series_shows'] ?? 0);
+        $msg = sprintf(
+            'Pronto: %d canais · %d filmes · %d séries · %d episódios na M3U',
+            (int) ($st['live'] ?? 0),
+            (int) ($st['movie'] ?? 0),
+            $shows,
+            (int) ($st['series'] ?? 0)
+        );
     }
 
     return [
@@ -270,5 +300,6 @@ function extractor_m3u_job_status_payload(array $job): array
         'done' => !empty($job['done']),
         'download_url' => (string) ($job['download_url'] ?? ''),
         'playlist_id' => (int) ($job['playlist_new_id'] ?? 0),
+        'xtream' => $xt ?: null,
     ];
 }

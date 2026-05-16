@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 const EXTRACTOR_PHP_VERSION = '1.2.0';
 /** Altere quando publicar no servidor — confirme em /health.php */
-const EXTRACTOR_BUILD_ID = '2026-05-15-series-v3';
+const EXTRACTOR_BUILD_ID = '2026-05-15-force-discovery-v1';
 
 define('EXTRACTOR_ROOT', __DIR__);
 define('EXTRACTOR_DATA', EXTRACTOR_ROOT . '/data');
@@ -104,6 +104,7 @@ function extractor_config_exists(): bool
  *   recaptcha_secret_key: string,
  *   credits_per_download: int,
  *   credits_per_discover: int,
+ *   credits_per_master_scan: int,
  *   asaas_api_key: string,
  *   asaas_sandbox: bool,
  *   asaas_webhook_token: string,
@@ -131,6 +132,7 @@ function extractor_config_try(): ?array
  *   recaptcha_secret_key: string,
  *   credits_per_download: int,
  *   credits_per_discover: int,
+ *   credits_per_master_scan: int,
  *   asaas_api_key: string,
  *   asaas_sandbox: bool,
  *   asaas_webhook_token: string,
@@ -159,6 +161,14 @@ function extractor_config(): array
         'recaptcha_secret_key' => trim((string) ($loaded['recaptcha_secret_key'] ?? '')),
         'credits_per_download' => max(0, (int) ($loaded['credits_per_download'] ?? 1)),
         'credits_per_discover' => max(0, (int) ($loaded['credits_per_discover'] ?? 0)),
+        'credits_per_master_scan' => max(
+            0,
+            (int) ($loaded['credits_per_master_scan'] ?? ($loaded['credits_per_discover'] ?? 0))
+        ),
+        'credits_per_force_scan' => max(
+            0,
+            (int) ($loaded['credits_per_force_scan'] ?? ($loaded['credits_per_master_scan'] ?? ($loaded['credits_per_discover'] ?? 0)))
+        ),
         'payment_provider' => trim((string) ($loaded['payment_provider'] ?? 'mercadopago')),
         'mercadopago_access_token' => trim((string) ($loaded['mercadopago_access_token'] ?? '')),
         'mercadopago_public_key' => trim((string) ($loaded['mercadopago_public_key'] ?? '')),
